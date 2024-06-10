@@ -26,3 +26,47 @@ util.func public @test_outer_dim_concat(%arg0: tensor<32x?x64xf16>, %arg1: tenso
 //       CHECK:   %[[SLICE0:.+]] = tensor.insert_slice %[[ARG0]] {{.*}}[0, 0, 0] [32, %{{.*}}, 64] [1, 1, 1]
 //       CHECK:   %[[SLICE1:.+]] = tensor.insert_slice %[[ARG1]] into %[[SLICE0]][32, 0, 0] [32, %{{.*}}, 64] [1, 1, 1]
 //       CHECK:   util.return %[[SLICE1]] : tensor<64x?x64xf16>
+
+// -----
+
+util.func public @test_inner_dim_slice(%arg0: tensor<1024x7x7x2xi8>) -> tensor<1024x7x7xi8> {
+  %extracted_slice = tensor.extract_slice %arg0[0, 0, 0, 1] [1024, 7, 7, 1] [1, 1, 1, 1] : tensor<1024x7x7x2xi8> to tensor<1024x7x7xi8>
+  util.return %extracted_slice : tensor<1024x7x7xi8>
+}
+// CHECK-LABEL:   util.func public @test_inner_dim_slice
+// CHECK:         %[[TPOS:[a-zA-Z0-9_]+]] = linalg.transpose
+// CHECK:         %[[EXTR:[a-zA-Z0-9_]+]] = tensor.extract_slice %[[TPOS]]
+// CHECK-SAME:      tensor<2x1024x7x7xi8> to tensor<1024x7x7xi8>
+
+// -----
+
+util.func public @test_inner_dim_slice_2(%arg0: tensor<1x1024x7x7x2xi8>) -> tensor<1024x7x7xi8> {
+  %extracted_slice = tensor.extract_slice %arg0[0, 0, 0, 0, 1] [1, 1024, 7, 7, 1] [1, 1, 1, 1, 1] : tensor<1x1024x7x7x2xi8> to tensor<1024x7x7xi8>
+  util.return %extracted_slice : tensor<1024x7x7xi8>
+}
+
+// CHECK:         %[[TPOS:[a-zA-Z0-9_]+]] = linalg.transpose
+// CHECK:         %[[EXTR:[a-zA-Z0-9_]+]] = tensor.extract_slice %[[TPOS]]
+// CHECK-SAME:      tensor<1x2x1024x7x7xi8> to tensor<1024x7x7xi8>
+
+// -----
+
+util.func public @test_inner_dim_slice_3(%arg0: tensor<1x1024x7x7x2xi8>) -> tensor<1x1024x7x7xi8> {
+  %extracted_slice = tensor.extract_slice %arg0[0, 0, 0, 0, 1] [1, 1024, 7, 7, 1] [1, 1, 1, 1, 1] : tensor<1x1024x7x7x2xi8> to tensor<1x1024x7x7xi8>
+  util.return %extracted_slice : tensor<1x1024x7x7xi8>
+}
+
+// CHECK:         %[[TPOS:[a-zA-Z0-9_]+]] = linalg.transpose
+// CHECK:         %[[EXTR:[a-zA-Z0-9_]+]] = tensor.extract_slice %[[TPOS]]
+// CHECK-SAME:      tensor<1x2x1024x7x7xi8> to tensor<1x1024x7x7xi8>
+
+// -----
+
+util.func public @test_inner_dim_slice_4(%arg0: tensor<1x1024x7x7x4xi8>) -> tensor<1x1024x7x7x2xi8> {
+  %extracted_slice = tensor.extract_slice %arg0[0, 0, 0, 0, 1] [1, 1024, 7, 7, 2] [1, 1, 1, 1, 1] : tensor<1x1024x7x7x4xi8> to tensor<1x1024x7x7x2xi8>
+  util.return %extracted_slice : tensor<1x1024x7x7x2xi8>
+}
+
+// CHECK:         %[[TPOS:[a-zA-Z0-9_]+]] = linalg.transpose
+// CHECK:         %[[EXTR:[a-zA-Z0-9_]+]] = tensor.extract_slice %[[TPOS]]
+// CHECK:         util.return %[[RET:.+]] : tensor<1x1024x7x7x2xi8>
