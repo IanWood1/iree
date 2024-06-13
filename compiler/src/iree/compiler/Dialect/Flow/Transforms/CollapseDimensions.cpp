@@ -8,7 +8,7 @@
 #include "iree/compiler/Dialect/Flow/Transforms/FormDispatchRegions.h"
 #include "iree/compiler/Dialect/Flow/Transforms/Passes.h"
 #include "iree/compiler/Dialect/Flow/Transforms/RegionOpUtils.h"
-#include "llvm/Support/Casting.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include "mlir/Analysis/SliceAnalysis.h"
@@ -105,6 +105,25 @@ getCollapsibleLoops(linalg::GenericOp genericOp) {
            (rDimsSet.count(prePos) && rDimsSet.count(nextPos));
   };
 
+  auto regionOp = dyn_cast<DispatchRegionOp>(genericOp->getParentOp());
+  assert(regionOp && "generic to collapse should be in a region");
+
+  SetVector<unsigned> preservedDims;
+  for (OpOperand *operand : genericOp.getDpsInputOperands()) {
+    RankedTensorType operandType =
+        dyn_cast<RankedTensorType>(operand->get().getType());
+    auto definingOp = operand->get().getDefiningOp();
+    if (!operandType || !definingOp ||
+        definingOp->getParentOfType<DispatchRegionOp>() != regionOp)
+      continue;
+    auto dims =
+        llvm::map_range(genericOp.getMatchingIndexingMap(operand).getResults(),
+                        [](AffineExpr expr) -> unsigned {
+                          return cast<AffineDimExpr>(expr).getPosition();
+                        });
+    preservedDims.insert(dims.begin(), dims.end());
+  }
+
   ReassociationIndices range;
   AffineExpr preExpr;
   // Find the largest sequence of dimensions that are
@@ -119,6 +138,11 @@ getCollapsibleLoops(linalg::GenericOp genericOp) {
   //    and repeat till the last element of sequence and the next result
   //    expression is not found as a sequence in all maps.
   for (auto nextExpr : genericOp.getIndexingMapsArray().front().getResults()) {
+    int64_t position = cast<AffineDimExpr>(nextExpr).getPosition();
+    if (preservedDims.contains(position)) {
+      preExpr = nextExpr;
+      continue;
+    }
     if (!range.empty()) {
       if (!hasAllMapsSameSequence(preExpr, nextExpr) ||
           !hasSameIteratorType(preExpr, nextExpr)) {
@@ -128,7 +152,7 @@ getCollapsibleLoops(linalg::GenericOp genericOp) {
         range.clear();
       }
     }
-    range.push_back(cast<AffineDimExpr>(nextExpr).getPosition());
+    range.push_back(position);
     preExpr = nextExpr;
   }
   if (range.size() > 1)
@@ -179,7 +203,7 @@ static bool isEligibleForCollapse(linalg::GenericOp genericOp) {
 /// without any producers.
 static FailureOr<linalg::GenericOp>
 findRootGenericOp(DispatchRegionOp regionOp) {
-  if (!llvm::hasSingleElement(regionOp.getBody())) {
+  if (!llvm::hasSingleElement(regionOp.getBody().getBlocks())) {
     return failure();
   }
 
@@ -201,13 +225,13 @@ findRootGenericOp(DispatchRegionOp regionOp) {
   }
 
   // Check that the operands of the generic op are defined outside the dispatch.
-  for (OpOperand *inputOperands : collapsibleOp.getDpsInputOperands()) {
-    Operation *definingOp = inputOperands->get().getDefiningOp();
-    if (definingOp &&
-        definingOp->getParentOfType<DispatchRegionOp>() == regionOp) {
-      return failure();
-    }
-  }
+  // for (OpOperand *inputOperands : collapsibleOp.getDpsInputOperands()) {
+  //   Operation *definingOp = inputOperands->get().getDefiningOp();
+  //   if (definingOp &&
+  //       definingOp->getParentOfType<DispatchRegionOp>() == regionOp) {
+  //     return failure();
+  //   }
+  // }
 
   // Check that the output is either a `tensor.empty` or a `linalg.fill` op by
   // traversing the operations that define the `init` operands of the
