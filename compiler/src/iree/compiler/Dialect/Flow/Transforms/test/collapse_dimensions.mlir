@@ -1,4 +1,4 @@
-// RUN: iree-opt --split-input-file --pass-pipeline="builtin.module(util.func(iree-flow-collapse-dimensions))" %s | FileCheck %s
+// RUN: iree-opt --verify-each --split-input-file --pass-pipeline="builtin.module(util.func(iree-flow-collapse-dimensions))" %s | FileCheck %s
 
 #map = affine_map<(d0, d1, d2) -> (d0, d1, d2)>
 util.func public @do_not_collapse_cst_in_place(%arg0: tensor<1x1x2304xf32>) {
@@ -55,5 +55,50 @@ util.func public @unpack_collapse(%arg0: tensor<2x320x128x128xf32>, %arg1: tenso
 }
 
 // CHECK-LABEL: util.func public @unpack_collapse
+// CHECK:         ins(
+// CHECK-SAME:      tensor<2x320x16384xf32>, tensor<320xf32>, tensor<2x320xf32>, tensor<320xf32>)
+
+// -----
+#map = affine_map<(d0, d1, d2, d3) -> (d0, d1, d2, d3)>
+#map1 = affine_map<(d0, d1, d2, d3) -> (d1)>
+#map2 = affine_map<(d0, d1, d2, d3) -> (d0, d1)>
+util.func public @unpack_generic_collapse(%arg0: tensor<2x320x128x128xf32>, %arg1: tensor<320xf32>, %arg2: tensor<320xf32>, %arg3: tensor<1x5x2x64xf32>) -> tensor<2x320x128x128xf16> {
+  %dispatch = flow.dispatch.region -> (tensor<2x320x128x128xf16>) {
+    %0 = tensor.empty() : tensor<2x320xf32>
+    %unpack = tensor.unpack %arg3 outer_dims_perm = [0, 1] inner_dims_pos = [0, 1] inner_tiles = [2, 64] into %0 : tensor<1x5x2x64xf32> -> tensor<2x320xf32>
+    %1 = tensor.empty() : tensor<2x320x128x128xf16>
+    %empty = tensor.empty() : tensor<2x320x128x128xf32>
+
+    %generic_add = linalg.generic {indexing_maps = [#map, #map], iterator_types = ["parallel", "parallel", "parallel", "parallel"]}
+      ins(%arg0 : tensor<2x320x128x128xf32>)
+      outs(%empty : tensor<2x320x128x128xf32>){
+    ^bb0(%in : f32, %out: f32):
+      %add = arith.addf %in, %in : f32
+      linalg.yield %add : f32
+    } -> tensor<2x320x128x128xf32>
+
+
+
+    %2 = linalg.generic {
+      indexing_maps = [#map, #map1, #map2, #map1, #map],
+      iterator_types = ["parallel", "parallel", "parallel", "parallel"]
+    }
+      ins(%generic_add, %arg1, %unpack, %arg2 : tensor<2x320x128x128xf32>, tensor<320xf32>, tensor<2x320xf32>, tensor<320xf32>)
+      outs(%1 : tensor<2x320x128x128xf16>) {
+    ^bb0(%in: f32, %in_0: f32, %in_1: f32, %in_2: f32, %out: f16):
+      %3 = arith.addf %in_1, %in_2 : f32
+      %4 = arith.addf %in, %in_0 : f32
+      %5 = arith.truncf %3 : f32 to f16
+      %6 = arith.truncf %4 : f32 to f16
+      %7 = arith.addf %6, %5 : f16
+      linalg.yield %7 : f16
+    } -> tensor<2x320x128x128xf16>
+    flow.return %2 : tensor<2x320x128x128xf16>
+  }
+  util.return %dispatch : tensor<2x320x128x128xf16>
+}
+
+// CHECK-LABEL: util.func public @unpack_generic_collapse
+// CHECK:         ins(%[[ARG:.+]]: tensor<10485760xf32>)
 // CHECK:         ins(
 // CHECK-SAME:      tensor<2x320x16384xf32>, tensor<320xf32>, tensor<2x320xf32>, tensor<320xf32>)

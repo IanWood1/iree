@@ -9,10 +9,12 @@
 #include "iree/compiler/Dialect/Flow/Transforms/Passes.h"
 #include "iree/compiler/Dialect/Flow/Transforms/RegionOpUtils.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include "mlir/Analysis/SliceAnalysis.h"
 #include "mlir/Dialect/Affine/Utils.h"
+#include "mlir/Dialect/Arith/Utils/Utils.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/IR/LinalgInterfaces.h"
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
@@ -29,6 +31,7 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include <deque>
+#include <stack>
 
 #define DEBUG_TYPE "iree-flow-collapse-dimensions"
 
@@ -105,25 +108,6 @@ getCollapsibleLoops(linalg::GenericOp genericOp) {
            (rDimsSet.count(prePos) && rDimsSet.count(nextPos));
   };
 
-  auto regionOp = dyn_cast<DispatchRegionOp>(genericOp->getParentOp());
-  assert(regionOp && "generic to collapse should be in a region");
-
-  SetVector<unsigned> preservedDims;
-  for (OpOperand *operand : genericOp.getDpsInputOperands()) {
-    RankedTensorType operandType =
-        dyn_cast<RankedTensorType>(operand->get().getType());
-    auto definingOp = operand->get().getDefiningOp();
-    if (!operandType || !definingOp ||
-        definingOp->getParentOfType<DispatchRegionOp>() != regionOp)
-      continue;
-    auto dims =
-        llvm::map_range(genericOp.getMatchingIndexingMap(operand).getResults(),
-                        [](AffineExpr expr) -> unsigned {
-                          return cast<AffineDimExpr>(expr).getPosition();
-                        });
-    preservedDims.insert(dims.begin(), dims.end());
-  }
-
   ReassociationIndices range;
   AffineExpr preExpr;
   // Find the largest sequence of dimensions that are
@@ -139,10 +123,6 @@ getCollapsibleLoops(linalg::GenericOp genericOp) {
   //    expression is not found as a sequence in all maps.
   for (auto nextExpr : genericOp.getIndexingMapsArray().front().getResults()) {
     int64_t position = cast<AffineDimExpr>(nextExpr).getPosition();
-    if (preservedDims.contains(position)) {
-      preExpr = nextExpr;
-      continue;
-    }
     if (!range.empty()) {
       if (!hasAllMapsSameSequence(preExpr, nextExpr) ||
           !hasSameIteratorType(preExpr, nextExpr)) {
@@ -232,37 +212,6 @@ findRootGenericOp(DispatchRegionOp regionOp) {
   //     return failure();
   //   }
   // }
-
-  // Check that the output is either a `tensor.empty` or a `linalg.fill` op by
-  // traversing the operations that define the `init` operands of the
-  // `collapsibleOp`.
-  std::deque<Operation *> worklist;
-  llvm::SmallDenseSet<Operation *> visited;
-  auto addDefiningOpToWorklist = [&](Value v) {
-    Operation *definingOp = v.getDefiningOp();
-    if (definingOp &&
-        definingOp->getParentOfType<DispatchRegionOp>() == regionOp &&
-        !visited.count(definingOp)) {
-      worklist.push_back(definingOp);
-      visited.insert(definingOp);
-    }
-  };
-  for (Value initOperand : collapsibleOp.getDpsInits()) {
-    addDefiningOpToWorklist(initOperand);
-  }
-
-  while (!worklist.empty()) {
-    Operation *op = worklist.front();
-    worklist.pop_front();
-    if (auto fillOp = dyn_cast<linalg::FillOp>(op)) {
-      addDefiningOpToWorklist(fillOp.getDpsInitOperand(0)->get());
-      continue;
-    }
-    if (isa<tensor::EmptyOp>(op)) {
-      continue;
-    }
-    return failure();
-  }
   return collapsibleOp;
 }
 
@@ -422,34 +371,101 @@ hoistTensorReshapesOutOfDispatchRegion(RewriterBase &rewriter,
   return newDispatchOp;
 }
 
+// Check that the output is either a `tensor.empty` or a `linalg.fill` op by
+// traversing the operations that define the `init` operands of the
+// `collapsibleOp`.
+static bool isInitCollapsible(linalg::GenericOp &collapsibleOp,
+                              DispatchRegionOp &regionOp) {
+  std::deque<Operation *> worklist;
+  llvm::SmallDenseSet<Operation *> visited;
+  auto addDefiningOpToWorklist = [&](Value v) {
+    Operation *definingOp = v.getDefiningOp();
+    if (definingOp &&
+        definingOp->getParentOfType<DispatchRegionOp>() == regionOp &&
+        !visited.count(definingOp)) {
+      worklist.push_back(definingOp);
+      visited.insert(definingOp);
+    }
+  };
+  for (Value initOperand : collapsibleOp.getDpsInits()) {
+    addDefiningOpToWorklist(initOperand);
+  }
+
+  while (!worklist.empty()) {
+    Operation *op = worklist.front();
+    worklist.pop_front();
+    if (auto fillOp = dyn_cast<linalg::FillOp>(op)) {
+      addDefiningOpToWorklist(fillOp.getDpsInitOperand(0)->get());
+      continue;
+    }
+    if (isa<tensor::EmptyOp>(op)) {
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+static bool collapseOpDimensions(IRRewriter &rewriter,
+                                 linalg::GenericOp genericOp) {
+  using CollapseIndices = SmallVector<ReassociationIndices>;
+
+  /// 1. Get reassociation for all generic ops by assuming operands
+  /// can be maximally collapsed
+  ///
+  /// 2. Going from leaf -> root, update reassociation to remove non-collapsible
+  /// dims
+
+  std::vector<linalg::GenericOp> worklist = {genericOp};
+  std::unordered_map<Operation *, CollapseIndices> opToReassociation;
+  std::unordered_map<Operation *, Operation *> opToParent;
+  while (!worklist.empty()) {
+    linalg::GenericOp curr = worklist.back();
+    worklist.pop_back();
+    if (!isEligibleForCollapse(genericOp))
+      continue;
+
+    opToReassociation[curr.getOperation()] = getCollapsibleLoops(curr);
+    for (auto *operand : curr.getDpsInputOperands()) {
+      if (auto operandOp = operand->get().getDefiningOp<linalg::GenericOp>()) {
+        worklist.push_back(operandOp);
+        opToParent[operandOp] = curr;
+      }
+    }
+  }
+
+  // Step 2. Check whether it is possible to collapse
+  if (!isEligibleForCollapse(genericOp))
+    return false;
+
+  CollapseIndices collapseIndices;
+  collapseIndices = getCollapsibleLoops(genericOp);
+  if (collapseIndices.empty())
+    return false;
+
+  // Step 3. Collapse dimensions
+  OpBuilder::InsertionGuard g(rewriter);
+  rewriter.setInsertionPoint(genericOp);
+
+  FailureOr<linalg::CollapseResult> maybeReplacements =
+      mlir::linalg::collapseOpIterationDims(genericOp, collapseIndices,
+                                            rewriter);
+  if (failed(maybeReplacements))
+    return false;
+  rewriter.replaceOp(genericOp, maybeReplacements->results);
+  return true;
+}
+
 /// Traverses DispatchRegionOps to find linalg genericOps that has no
 /// producers and tries to collapse its dimensions.
 static bool collapseDimensions(IRRewriter &rewriter,
                                DispatchRegionOp &regionOp) {
   // Step 1. Find the root linalg.generic Op with no producer
   std::optional<linalg::GenericOp> genericOp = findRootGenericOp(regionOp);
-  if (!genericOp.has_value())
+  if (!genericOp.has_value() || !isInitCollapsible(genericOp.value(), regionOp))
     return false;
 
-  // Step 2. Check whether it is possible to collapse
-  if (!isEligibleForCollapse(genericOp.value()))
-    return false;
-  SmallVector<ReassociationIndices> collapseIndices;
-  collapseIndices = getCollapsibleLoops(genericOp.value());
-  if (collapseIndices.empty())
-    return false;
-
-  // Step 3. Collapse dimensions
-  OpBuilder::InsertionGuard g(rewriter);
-  rewriter.setInsertionPoint(genericOp.value());
-
-  FailureOr<linalg::CollapseResult> maybeReplacements =
-      mlir::linalg::collapseOpIterationDims(genericOp.value(), collapseIndices,
-                                            rewriter);
-  if (failed(maybeReplacements))
-    return false;
-  rewriter.replaceOp(genericOp.value(), maybeReplacements->results);
-  return true;
+  return collapseOpDimensions(rewriter, genericOp.value());
 }
 
 void CollapseDimensionsPass::runOnOperation() {
