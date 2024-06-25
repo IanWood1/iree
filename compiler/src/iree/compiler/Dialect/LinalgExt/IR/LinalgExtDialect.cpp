@@ -75,6 +75,11 @@ public:
   }
 
   // Forward all the interface methods to the corresponding linalg op.
+  SmallVector<utils::IteratorType>
+  getLoopIteratorTypesArray(mlir::Operation *op) const {
+    return (llvm::cast<ConcreteType>(op).getIteratorTypesArray());
+  }
+
   unsigned getNumParallelLoops(mlir::Operation *op) const {
     return (llvm::cast<ConcreteType>(op).getNumParallelLoops());
   }

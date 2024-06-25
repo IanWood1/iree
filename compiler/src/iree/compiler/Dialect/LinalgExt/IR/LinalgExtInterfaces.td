@@ -84,6 +84,18 @@ def LinalgFusionInterface : OpInterface<"LinalgFusionOpInterface"> {
     >,
     InterfaceMethod<
       /*desc=*/[{
+        Returns a list of iterator types describing each loop.
+      }],
+      /*retTy=*/"SmallVector<utils::IteratorType>",
+      /*methodName=*/"getLoopIteratorTypesArray",
+      /*args=*/(ins),
+      /*methodBody=*/"",
+      /*defaultImplementation=*/[{
+        return $_op.getLoopIteratorTypes();
+      }]
+    >,
+    InterfaceMethod<
+      /*desc=*/[{
         Return the number of parallel loops.
       }],
       /*retTy=*/"unsigned",

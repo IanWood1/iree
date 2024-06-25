@@ -224,4 +224,29 @@ getReassociationForExpansion(AffineMap indexingMap,
   return reassociation;
 }
 
+/// Checks if a single dynamic dimension expanded into multiple dynamic
+/// dimensions.
+LogicalResult
+validateDynamicDimExpansion(LinalgExt::LinalgFusionOpInterface interfaceOp,
+                            const ExpansionInfo &expansionInfo,
+                            PatternRewriter &rewriter) {
+  for (unsigned i : llvm::seq<unsigned>(0, expansionInfo.getOrigOpNumDims())) {
+    ArrayRef<int64_t> expandedShape = expansionInfo.getExpandedShapeOfDim(i);
+    if (expandedShape.size() == 1)
+      continue;
+    bool foundDynamic = false;
+    for (int64_t shape : expandedShape) {
+      if (!ShapedType::isDynamic(shape))
+        continue;
+      if (foundDynamic) {
+        return rewriter.notifyMatchFailure(
+            interfaceOp, "cannot infer expanded shape with multiple dynamic "
+                         "dims in the same reassociation group");
+      }
+      foundDynamic = true;
+    }
+  }
+  return success();
+}
+
 } // namespace mlir::iree_compiler::IREE::Flow

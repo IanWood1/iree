@@ -87,4 +87,9 @@ RankedTensorType getExpandedType(RankedTensorType originalType,
 SmallVector<ReassociationIndices>
 getReassociationForExpansion(AffineMap indexingMap,
                              const ExpansionInfo &expansionInfo);
+
+LogicalResult
+validateDynamicDimExpansion(LinalgExt::LinalgFusionOpInterface interfaceOp,
+                            const ExpansionInfo &expansionInfo,
+                            PatternRewriter &rewriter);
 } // namespace mlir::iree_compiler::IREE::Flow
