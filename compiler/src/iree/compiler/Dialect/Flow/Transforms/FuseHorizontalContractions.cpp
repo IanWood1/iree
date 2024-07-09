@@ -6,11 +6,8 @@
 
 #include "iree/compiler/Dialect/Flow/IR/FlowOps.h"
 #include "iree/compiler/Dialect/Flow/Transforms/RegionOpUtils.h"
-#include "iree/compiler/GlobalOptimization/PassDetail.h"
-#include "iree/compiler/GlobalOptimization/Passes.h"
-#include "iree/compiler/GlobalOptimization/Utils.h"
-#include "mlir/IR/Dominance.h"
-
+#include "mlir/Analysis/SliceAnalysis.h"
+#include "mlir/Analysis/TopologicalSortUtils.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/IR/LinalgInterfaces.h"
@@ -28,21 +25,17 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
-#define DEBUG_TYPE "iree-global-opt-fuse-horizontal-contraction"
+#define DEBUG_TYPE "iree-flow-fuse-horizontal-contraction"
 
-namespace mlir::iree_compiler::GlobalOptimization {
+namespace mlir::iree_compiler::IREE::Flow {
+
+#define GEN_PASS_DEF_FUSEHORIZONTALCONTRACTIONSPASS
+#include "iree/compiler/Dialect/Flow/Transforms/Passes.h.inc"
 
 namespace {
 
 struct FuseHorizontalContractionsPass
-    : public FuseHorizontalContractionsBase<FuseHorizontalContractionsPass> {
-
-  void getDependentDialects(DialectRegistry &registry) const override {
-    registry.insert<arith::ArithDialect, tensor::TensorDialect>();
-  }
-  FuseHorizontalContractionsPass() {}
-  FuseHorizontalContractionsPass(const FuseHorizontalContractionsPass &pass)
-      : FuseHorizontalContractionsPass() {}
+    : public impl::FuseHorizontalContractionsPassBase<FuseHorizontalContractionsPass> {
 
   void runOnOperation() override;
 };
@@ -448,11 +441,6 @@ void FuseHorizontalContractionsPass::runOnOperation() {
           applyPatternsAndFoldGreedily(getOperation(), std::move(patterns)))) {
     return signalPassFailure();
   }
-}
-
-std::unique_ptr<InterfacePass<mlir::FunctionOpInterface>>
-createFuseHorizontalContractionsPass() {
-  return std::make_unique<FuseHorizontalContractionsPass>();
 }
 
 } // namespace mlir::iree_compiler::GlobalOptimization
