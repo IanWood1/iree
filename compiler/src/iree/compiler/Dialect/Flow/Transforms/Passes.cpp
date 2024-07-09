@@ -191,7 +191,7 @@ void addDispatchRegionCreationPreprocessingPasses(OpPassManager &passManager) {
       //    producer-consumer fusion.
       .addPass(IREE::Flow::createSinkReshapesPass)
       .addPass(IREE::Flow::createCanonicalizerPass)
-    .addPass(mlir::createCSEPass);
+      .addPass(mlir::createCSEPass);
 
   if (clEnableFuseHorizontalContractions) {
     FunctionLikeNest(passManager)
