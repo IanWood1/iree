@@ -8,6 +8,7 @@
 
 #include "iree/compiler/Dialect/Encoding/IR/EncodingDialect.h"
 #include "iree/compiler/Dialect/Encoding/IR/EncodingOps.h"
+#include "iree/compiler/Dialect/Flow/Transforms/RegionOpUtils.h"
 #include "iree/compiler/Dialect/LinalgExt/IR/LinalgExtDialect.h"
 #include "iree/compiler/Dialect/LinalgExt/IR/LinalgExtOps.h"
 #include "iree/compiler/Dialect/Util/IR/UtilTypes.h"
@@ -199,11 +200,21 @@ template <typename OpTy>
 struct HoistableLinalgOpInterface
     : public IREE::Util::HoistableOpInterface::ExternalModel<
           HoistableLinalgOpInterface<OpTy>, OpTy> {
-  bool isHoistableOp(Operation *) const { return true; }
+  bool isHoistableOp(Operation *op) const {
+    // Don't hoist bitwidth extending ops
+    return !IREE::Flow::isBitExtendOp(op);
+  }
+
   bool isHoistableLeafOp(Operation *op) const {
     auto genericOp = llvm::dyn_cast<linalg::GenericOp>(op);
     if (!genericOp)
       return true;
+
+    // Don't hoist bitwidth extending ops
+    if (IREE::Flow::isBitExtendOp(op)) {
+      return false;
+    }
+
     // Generally, we prefer to not hoist broadcasts.
     // Detect op that only broadcast input as fusing them makes the new
     // op cheaper.
