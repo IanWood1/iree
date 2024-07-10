@@ -226,7 +226,7 @@ static bool isRootOp(Operation *op) {
     return false;
   }
   // Dequantization-like ops get cloned into dispatches later.
-  if (isBitExtendOp(op)) {
+  if (LinalgExt::isBitExtendOp(op)) {
     return false;
   }
   // Any Linalg named op or generic op with reduction iterator types is a root
@@ -539,7 +539,7 @@ isFusableWithConsumer(OpOperand &fusedOperand,
 
   // If consumer is a dequant operation, dont fuse it. These get cloned
   // into their consumers.
-  if (isBitExtendOp(consumer)) {
+  if (LinalgExt::isBitExtendOp(consumer)) {
     return false;
   }
 
@@ -874,7 +874,7 @@ decideFusableLinalgOps(Region &region, DominanceInfo const &dominanceInfo,
       // materializing large tensors between dispatches.
       if (!isa<linalg::LinalgOp, tensor::PadOp, tensor::PackOp,
                IREE::Encoding::SetEncodingOp>(op) ||
-          isa<linalg::FillOp>(op) || isBitExtendOp(&op)) {
+          isa<linalg::FillOp>(op) || LinalgExt::isBitExtendOp(&op)) {
         continue;
       }
 

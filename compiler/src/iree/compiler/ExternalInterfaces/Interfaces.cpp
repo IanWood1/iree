@@ -7,6 +7,7 @@
 #include "iree/compiler/ExternalInterfaces/Interfaces.h"
 
 #include "iree/compiler/ExternalInterfaces/FlowExternalModels.h"
+#include "iree/compiler/ExternalInterfaces/LinalgExternalModels.h"
 #include "iree/compiler/ExternalInterfaces/StreamExternalModels.h"
 #include "iree/compiler/ExternalInterfaces/UtilExternalModels.h"
 
@@ -16,6 +17,7 @@ void registerExternalInterfaces(DialectRegistry &registry) {
   registerFlowExternalModels(registry);
   registerStreamExternalModels(registry);
   registerUtilExternalModels(registry);
+  registerLinalgExternalModels(registry);
 }
 
 } // namespace mlir::iree_compiler
