@@ -17,10 +17,53 @@
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Pass/Pass.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 namespace mlir::iree_compiler::GlobalOptimization {
 
 namespace {
+
+class GeneralizeBroadcastMatmul : public OpRewritePattern<linalg::MatmulOp> {
+public:
+  using OpRewritePattern::OpRewritePattern;
+  LogicalResult matchAndRewrite(linalg::MatmulOp matmulOp,
+                                PatternRewriter &rewriter) const override {
+    // Find broadcast producer
+    unsigned operandNumber;
+    linalg::BroadcastOp broadcastOp(nullptr);
+    for (auto &currOperand : matmulOp->getOpOperands()) {
+      if ((broadcastOp =
+               currOperand.get().getDefiningOp<linalg::BroadcastOp>())) {
+        operandNumber = currOperand.getOperandNumber();
+        break;
+      }
+    }
+    if (!broadcastOp) {
+      return rewriter.notifyMatchFailure(matmulOp,
+                                         "no broadcast operand found");
+    }
+    FailureOr<linalg::GenericOp> maybeGeneric =
+        linalg::generalizeNamedOp(rewriter, matmulOp);
+    if (failed(maybeGeneric)) {
+      return rewriter.notifyMatchFailure(matmulOp, "failed to generalize");
+    }
+    linalg::GenericOp genericOp = *maybeGeneric;
+
+    SmallVector<AffineMap> genericIndexingMaps =
+        genericOp.getIndexingMapsArray();
+    AffineMap broadcastMap = broadcastOp.getIndexingMapsArray()[0];
+    genericIndexingMaps[operandNumber] =
+        broadcastMap.compose(genericIndexingMaps[operandNumber]);
+
+    rewriter.startOpModification(genericOp);
+    genericOp.getInputsMutable()[operandNumber].set(broadcastOp.getInput());
+    genericOp.setIndexingMapsAttr(
+        rewriter.getAffineMapArrayAttr(genericIndexingMaps));
+    rewriter.finalizeOpModification(genericOp);
+    return success();
+  }
+};
+
 struct GeneralizeLinalgNamedOpsPass
     : public GeneralizeLinalgNamedOpsBase<GeneralizeLinalgNamedOpsPass> {
 
@@ -31,6 +74,13 @@ struct GeneralizeLinalgNamedOpsPass
 void GeneralizeLinalgNamedOpsPass::runOnOperation() {
   auto funcOp = getOperation();
   SmallVector<linalg::LinalgOp> namedOpCandidates;
+
+  RewritePatternSet patterns(&getContext());
+  patterns.insert<GeneralizeBroadcastMatmul>(&getContext());
+  if (failed(applyPatternsAndFoldGreedily(funcOp, std::move(patterns)))) {
+    return signalPassFailure();
+  }
+
   funcOp.walk([&](linalg::LinalgOp linalgOp) {
     if (!IREE::Flow::isNonNullAndOutsideDispatch(linalgOp)) {
       return;
