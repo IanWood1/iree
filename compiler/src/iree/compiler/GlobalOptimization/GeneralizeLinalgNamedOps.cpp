@@ -15,7 +15,9 @@
 #include "iree/compiler/GlobalOptimization/PassDetail.h"
 #include "iree/compiler/GlobalOptimization/Passes.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
+#include "mlir/Dialect/Linalg/IR/LinalgInterfaces.h"
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
+#include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
@@ -23,11 +25,16 @@ namespace mlir::iree_compiler::GlobalOptimization {
 
 namespace {
 
-class GeneralizeBroadcastMatmul : public OpRewritePattern<linalg::MatmulOp> {
+class GeneralizeBroadcastMatmul
+    : public OpInterfaceRewritePattern<linalg::ContractionOpInterface> {
 public:
-  using OpRewritePattern::OpRewritePattern;
-  LogicalResult matchAndRewrite(linalg::MatmulOp matmulOp,
+  using OpInterfaceRewritePattern::OpInterfaceRewritePattern;
+  LogicalResult matchAndRewrite(linalg::ContractionOpInterface matmulOp,
                                 PatternRewriter &rewriter) const override {
+    auto linalgOp = dyn_cast<linalg::LinalgOp>(matmulOp.getOperation());
+    if (!linalgOp)
+      return failure();
+
     // Find broadcast producer
     unsigned operandNumber;
     linalg::BroadcastOp broadcastOp(nullptr);
@@ -43,7 +50,7 @@ public:
                                          "no broadcast operand found");
     }
     FailureOr<linalg::GenericOp> maybeGeneric =
-        linalg::generalizeNamedOp(rewriter, matmulOp);
+        linalg::generalizeNamedOp(rewriter, linalgOp);
     if (failed(maybeGeneric)) {
       return rewriter.notifyMatchFailure(matmulOp, "failed to generalize");
     }
