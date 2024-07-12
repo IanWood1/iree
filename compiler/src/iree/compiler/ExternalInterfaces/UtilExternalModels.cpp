@@ -11,6 +11,7 @@
 #include "iree/compiler/Dialect/LinalgExt/IR/LinalgExtDialect.h"
 #include "iree/compiler/Dialect/LinalgExt/IR/LinalgExtInterfaces.h"
 #include "iree/compiler/Dialect/LinalgExt/IR/LinalgExtOps.h"
+#include "iree/compiler/Dialect/LinalgExt/Utils/Utils.h"
 #include "iree/compiler/Dialect/Util/IR/UtilTypes.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
@@ -202,8 +203,7 @@ struct HoistableLinalgOpInterface
           HoistableLinalgOpInterface<OpTy>, OpTy> {
   bool isHoistableOp(Operation *op) const {
     // Don't hoist bitwidth extending ops
-    auto interfaceOp = dyn_cast<IREE::LinalgExt::BitWidthChangeOpInterface>(op);
-    return interfaceOp && interfaceOp.isExtensionOp();
+    return !IREE::LinalgExt::isBitExtendOp(op);
   }
 
   bool isHoistableLeafOp(Operation *op) const {
@@ -212,8 +212,7 @@ struct HoistableLinalgOpInterface
       return true;
 
     // Don't hoist bitwidth extending ops
-    auto interfaceOp = dyn_cast<IREE::LinalgExt::BitWidthChangeOpInterface>(op);
-    if (interfaceOp && interfaceOp.isExtensionOp()) {
+    if (IREE::LinalgExt::isBitExtendOp(op)) {
       return false;
     }
 

@@ -9,7 +9,7 @@
 
 #include "compiler/src/iree/compiler/Dialect/Flow/Transforms/FusionUtils.h"
 #include "compiler/src/iree/compiler/Dialect/Flow/Transforms/RegionOpUtils.h"
-#include "iree/compiler/Dialect/LinalgExt/IR/LinalgExtInterfaces.h"
+#include "iree/compiler/Dialect/LinalgExt/Utils/Utils.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 
 namespace mlir::iree_compiler::IREE::Flow {

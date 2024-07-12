@@ -157,40 +157,4 @@ def LinalgFusionInterface : OpInterface<"LinalgFusionOpInterface"> {
   ];
 }
 
-//===----------------------------------------------------------------------===//
-// IREE::LinalgExt::BitWidthChangeInterface
-//===----------------------------------------------------------------------===//
-
-def BitWidthChangeOpInterface : OpInterface<"BitWidthChangeOpInterface"> {
-  let description = [{
-    Interface for ops that operate on tensors to determine if their result extends
-    the bitwidth of their highest ranked input.
-
-    Implementing this interface prevents bitwidth expanding ops from being hoisted.
-  }];
-
-  let methods = [
-    InterfaceMethod<
-      /*desc=*/[{
-        Returns true if the input with the highest rank has a higher bitwidth
-        than the output.
-      }],
-      /*retTy=*/"bool",
-      /*methodName=*/"isExtensionOp",
-      /*args=*/(ins),
-      /*methodBody=*/""
-    >,
-    InterfaceMethod<
-      /*desc=*/[{
-        Returns true if the input with the highest rank has a lower bitwidth
-        than the output.
-      }],
-      /*retTy=*/"bool",
-      /*methodName=*/"isTruncationOp",
-      /*args=*/(ins),
-      /*methodBody=*/""
-    >
-  ];
-}
-
 #endif  // IREE_DIALECT_LINALGEXT_INTERFACES

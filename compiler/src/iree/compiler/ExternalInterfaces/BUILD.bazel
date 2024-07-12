@@ -17,14 +17,12 @@ iree_compiler_cc_library(
     srcs = [
         "FlowExternalModels.cpp",
         "Interfaces.cpp",
-        "LinalgExternalModels.cpp",
         "StreamExternalModels.cpp",
         "UtilExternalModels.cpp",
     ],
     hdrs = [
         "FlowExternalModels.h",
         "Interfaces.h",
-        "LinalgExternalModels.h",
         "StreamExternalModels.h",
         "UtilExternalModels.h",
     ],
@@ -32,6 +30,7 @@ iree_compiler_cc_library(
         "//compiler/src/iree/compiler/Dialect/Encoding/IR",
         "//compiler/src/iree/compiler/Dialect/Flow/IR",
         "//compiler/src/iree/compiler/Dialect/LinalgExt/IR",
+        "//compiler/src/iree/compiler/Dialect/LinalgExt/Utils",
         "//compiler/src/iree/compiler/Dialect/Stream/IR",
         "//compiler/src/iree/compiler/Dialect/Util/IR",
         "@llvm-project//mlir:ArithDialect",

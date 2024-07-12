@@ -34,22 +34,6 @@ LogicalResult verifyLinalgExtOpInterface(Operation *op);
 /// Include the generated interface declarations.
 #include "iree/compiler/Dialect/LinalgExt/IR/LinalgExtInterfaces.h.inc" // IWYU pragma: export
 
-/// Returns true if the operation increases/decreases bitwidths of tensors.
-/// This function checks that the genericOp:
-/// 1. Has only one output.
-/// 2. Has all parallel loops.
-/// 3. Compared to the element type of the input with highest rank,
-///    the output element type has either a higher or lower bitwidth.
-inline bool isBitExtendOp(Operation *op) {
-  auto bitWidthChangeOp = dyn_cast<BitWidthChangeOpInterface>(op);
-  return bitWidthChangeOp && bitWidthChangeOp.isExtensionOp();
-}
-
-inline bool isBitTruncateOp(Operation *op) {
-  auto bitWidthChangeOp = dyn_cast<BitWidthChangeOpInterface>(op);
-  return bitWidthChangeOp && bitWidthChangeOp.isTruncationOp();
-}
-
 } // namespace mlir::iree_compiler::IREE::LinalgExt
 
 #include "iree/compiler/Dialect/LinalgExt/IR/LinalgExtOps.h.inc" // IWYU pragma: export
