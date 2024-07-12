@@ -201,10 +201,7 @@ template <typename OpTy>
 struct HoistableLinalgOpInterface
     : public IREE::Util::HoistableOpInterface::ExternalModel<
           HoistableLinalgOpInterface<OpTy>, OpTy> {
-  bool isHoistableOp(Operation *op) const {
-    // Don't hoist bitwidth extending ops
-    return !IREE::LinalgExt::isBitExtendOp(op);
-  }
+  bool isHoistableOp(Operation *op) const { return true; }
 
   bool isHoistableLeafOp(Operation *op) const {
     auto genericOp = llvm::dyn_cast<linalg::GenericOp>(op);
