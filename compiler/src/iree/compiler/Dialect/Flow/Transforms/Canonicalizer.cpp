@@ -6,8 +6,12 @@
 
 #include "iree/compiler/Dialect/Flow/Transforms/Passes.h"
 
+#include "llvm/Support/Debug.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Tensor/Transforms/Transforms.h"
+#include "mlir/Interfaces/SubsetOpInterface.h"
+#include "mlir/Interfaces/ValueBoundsOpInterface.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
@@ -94,6 +98,42 @@ struct FoldConsecutiveConstantPadding : public OpRewritePattern<tensor::PadOp> {
   }
 };
 
+struct FoldInsertExtractSlice
+    : public OpRewritePattern<tensor::ExtractSliceOp> {
+  using OpRewritePattern<tensor::ExtractSliceOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(tensor::ExtractSliceOp extractOp,
+                                PatternRewriter &rewriter) const override {
+    auto insertOp =
+        extractOp.getSource().getDefiningOp<tensor::InsertSliceOp>();
+    if (!insertOp) {
+      return failure();
+    }
+
+    auto offsets1 = extractOp.getStaticOffsets();
+    auto offsets2 = insertOp.getStaticOffsets();
+    auto size1 = extractOp.getStaticSizes();
+    auto size2 = insertOp.getStaticSizes();
+    bool disjoint = false;
+    auto rank = extractOp.getSource().getType().getRank();
+    for (int64_t dim = 0; dim < rank; dim++) {
+      auto end1 = offsets1[dim] + size1[dim];
+      auto end2 = offsets2[dim] + size2[dim];
+      if (offsets1[dim] >= end2 || offsets2[dim] >= end1) {
+        disjoint = true;
+        break;
+      }
+    }
+    if (!disjoint) {
+      return failure();
+    }
+
+    rewriter.startOpModification(extractOp);
+    extractOp.getSourceMutable().set(insertOp.getSource());
+    rewriter.finalizeOpModification(extractOp);
+    return success();
+  }
+};
+
 /// Canonicalize operations in nested regions.
 struct CanonicalizerPass
     : public impl::CanonicalizerPassBase<CanonicalizerPass> {
@@ -116,6 +156,7 @@ struct CanonicalizerPass
     // canonicalization.
     tensor::populateMergeConsecutiveInsertExtractSlicePatterns(owningPatterns);
     owningPatterns.add<FoldConsecutiveConstantPadding>(context);
+    owningPatterns.add<FoldInsertExtractSlice>(context);
 
     patterns =
         std::make_shared<FrozenRewritePatternSet>(std::move(owningPatterns));
