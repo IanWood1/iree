@@ -865,6 +865,47 @@ public:
   }
 };
 
+class FoldTransposeReshape : public OpRewritePattern<linalg::TransposeOp> {
+public:
+  using OpRewritePattern<linalg::TransposeOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(linalg::TransposeOp transposeOp,
+                                PatternRewriter &rewriter) const override {
+    auto expandOp =
+        transposeOp.getInput().getDefiningOp<tensor::ExpandShapeOp>();
+    if (!expandOp) {
+      return failure();
+    }
+    auto collapseOp =
+        expandOp.getSrc().getDefiningOp<tensor::CollapseShapeOp>();
+    if (!collapseOp) {
+      return failure();
+    }
+    auto firstTransposeOp =
+        collapseOp.getSrc().getDefiningOp<linalg::TransposeOp>();
+    if (!firstTransposeOp) {
+      return failure();
+    }
+
+    auto finalType = cast<RankedTensorType>(transposeOp.getType(0));
+    // tensor::CollapseShapeOp::build(::mlir::OpBuilder &odsBuilder,
+    // ::mlir::OperationState &odsState, ::mlir::Type result, ::mlir::Value src,
+    // ::mlir::ArrayAttr reassociation)
+    //
+    // tensor::ExpandShapeOp::build(::mlir::OpBuilder &odsBuilder,
+    // ::mlir::OperationState &odsState, ::mlir::Type result, ::mlir::Value src,
+    // ::mlir::ArrayAttr reassociation, ::mlir::ValueRange output_shape,
+    // ::llvm::ArrayRef<int64_t> static_output_shape)
+    auto newCollapseOp = rewriter.create<tensor::CollapseShapeOp>(
+        collapseOp.getLoc(), collapseOp.getResultType(),
+        firstTransposeOp.getInput(), collapseOp.getReassociationIndices());
+    auto newExpandOp = rewriter.create<tensor::ExpandShapeOp>(
+        expandOp.getLoc(), finalType, newCollapseOp.getResult(),
+        expandOp.getReassociationIndices());
+    rewriter.replaceOp(transposeOp, newExpandOp);
+    return success();
+  }
+};
+
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -998,6 +1039,7 @@ populateCommonCanonicalizationPatterns(MLIRContext *context,
   tensor::EmptyOp::getCanonicalizationPatterns(patterns, context);
   tensor::ExpandShapeOp::getCanonicalizationPatterns(patterns, context);
   tensor::CollapseShapeOp::getCanonicalizationPatterns(patterns, context);
+  patterns.insert<FoldTransposeReshape>(context);
   tensor::populateFoldTensorEmptyPatterns(patterns,
                                           /*foldSingleUseOnly=*/false);
   patterns.add<FoldTransposeOfEmpty>(context);
