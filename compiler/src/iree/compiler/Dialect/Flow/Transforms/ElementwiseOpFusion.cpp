@@ -27,6 +27,30 @@ namespace mlir::iree_compiler::IREE::Flow {
 #include "iree/compiler/Dialect/Flow/Transforms/Passes.h.inc"
 
 namespace {
+struct ElementwiseOpIdentityPattern
+    : public OpRewritePattern<linalg::GenericOp> {
+  using OpRewritePattern<linalg::GenericOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(linalg::GenericOp genericOp,
+                                PatternRewriter &rewriter) const override {
+    if (!linalg::isElementwise(genericOp))
+      return failure();
+
+    if (genericOp.getNumOperands() > 0 &&
+        !llvm::all_equal(genericOp.getIndexingMapsArray()))
+      return failure();
+
+    AffineMap inputMap = genericOp.getIndexingMapsArray().front();
+    if (inputMap.isIdentity())
+      return failure();
+
+    ArrayRef<AffineExpr> exprs = inputMap.getResults();
+    auto perm = llvm::map_to_vector(exprs, [](AffineExpr e) -> unsigned {
+      return cast<AffineDimExpr>(e).getPosition();
+    });
+
+    return linalg::interchangeGenericOp(rewriter, genericOp, perm);
+  }
+};
 
 class ElementwiseOpFusionPass
     : public impl::ElementwiseOpFusionPassBase<ElementwiseOpFusionPass> {
@@ -75,6 +99,7 @@ void ElementwiseOpFusionPass::runOnOperation() {
       };
   linalg::populateElementwiseOpsFusionPatterns(fusionPatterns,
                                                fuseElementwiseOpsControlFn);
+  fusionPatterns.insert<ElementwiseOpIdentityPattern>(context);
   GreedyRewriteConfig rewriteConfig;
   rewriteConfig.maxIterations = GreedyRewriteConfig::kNoLimit;
   if (failed(applyPatternsAndFoldGreedily(
