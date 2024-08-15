@@ -11,7 +11,8 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 
-#define DEBUG_TYPE "iree-flow-clone-producers-into-dispatch-regions"
+#define DEBUG_TYPE                                                             \
+  "iree-dispatch-creation-clone-producers-into-dispatch-regions"
 
 namespace mlir::iree_compiler::DispatchCreation {
 

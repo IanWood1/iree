@@ -19,7 +19,7 @@
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
-#define DEBUG_TYPE "iree-flow-elementwise-op-fusion"
+#define DEBUG_TYPE "iree-dispatch-creation-elementwise-op-fusion"
 
 namespace mlir::iree_compiler::DispatchCreation {
 

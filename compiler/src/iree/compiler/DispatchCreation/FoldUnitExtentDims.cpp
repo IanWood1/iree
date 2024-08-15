@@ -25,7 +25,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
-#define DEBUG_TYPE "iree-flow-fold-unit-extent-dims"
+#define DEBUG_TYPE "iree-dispatch-creation-fold-unit-extent-dims"
 
 namespace mlir::iree_compiler::DispatchCreation {
 

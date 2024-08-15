@@ -17,63 +17,64 @@
 //===----------------------------------------------------------------------===//
 
 static llvm::cl::opt<std::string> clDispatchTransformFileName(
-    "iree-flow-dispatch-use-transform-dialect",
+    "iree-dispatch-creation-dispatch-use-transform-dialect",
     llvm::cl::desc("MLIR file containing a top-level module that specifies "
                    "the transformations to apply to form dispatch regions."),
     llvm::cl::init(""));
 
 static llvm::cl::opt<bool> clDetensoring(
-    "iree-flow-enable-detensoring",
+    "iree-dispatch-creation-enable-detensoring",
     llvm::cl::desc(
         "Enable changing of tensor operations into scalar operations."),
     llvm::cl::init(false));
 
 static llvm::cl::opt<bool> clEnableElementWiseFuseMultiReduction(
-    "iree-flow-element-wise-fuse-multi-reduction",
+    "iree-dispatch-creation-element-wise-fuse-multi-reduction",
     llvm::cl::desc("Enable element-wise fusion of multi-reduction loop ops."),
     llvm::cl::init(true));
 
 static llvm::cl::opt<bool> clEnableFusePaddingIntoLinalgConsumerOps(
-    "iree-flow-enable-fuse-padding-into-linalg-consumer-ops",
+    "iree-dispatch-creation-enable-fuse-padding-into-linalg-consumer-ops",
     llvm::cl::desc("Enable fusing tensor.pad ops into Linalg consumer ops."),
     llvm::cl::init(false));
 
 static llvm::cl::opt<bool> clEnableFusePaddingIntoLinalgProducerOps(
-    "iree-flow-enable-fuse-padding-into-linalg-producer-ops",
+    "iree-dispatch-creation-enable-fuse-padding-into-linalg-producer-ops",
     llvm::cl::desc("Enable fusing tensor.pad ops into Linalg consumer ops."),
     llvm::cl::init(false));
 
 static llvm::cl::opt<int> clPadFactor(
-    "iree-flow-pad-factor",
-    llvm::cl::desc("Provides padding size hints that will be attached to "
-                   "encodings. This only affects the experimental data tiling "
-                   "path in Flow with iree-flow-experimental-data-tiling."),
+    "iree-dispatch-creation-pad-factor",
+    llvm::cl::desc(
+        "Provides padding size hints that will be attached to "
+        "encodings. This only affects the experimental data tiling "
+        "path in Flow with iree-dispatch-creation-experimental-data-tiling."),
     llvm::cl::init(32));
 
 static llvm::cl::opt<bool> clEnableFuseHorizontalContractions(
-    "iree-flow-enable-fuse-horizontal-contractions",
+    "iree-dispatch-creation-enable-fuse-horizontal-contractions",
     llvm::cl::desc(
         "Enables horizontal fusion of contractions with one common operand"),
     llvm::cl::init(false));
 
 static llvm::cl::opt<bool> clCollapseReductionDims(
-    "iree-flow-collapse-reduction-dims",
+    "iree-dispatch-creation-collapse-reduction-dims",
     llvm::cl::desc("Enable collapsing of reduction dims"),
     llvm::cl::init(false));
 
 static llvm::cl::opt<bool>
-    clEnableFuseMultiUse("iree-flow-fuse-multi-use",
+    clEnableFuseMultiUse("iree-dispatch-creation-fuse-multi-use",
                          llvm::cl::desc("Fuse multi-use ops."),
                          llvm::cl::init(false));
 
 static llvm::cl::opt<bool> clEnableAggressiveFusion(
-    "iree-flow-enable-aggressive-fusion",
+    "iree-dispatch-creation-enable-aggressive-fusion",
     llvm::cl::desc("Aggressive fusion opportunities that are behind a flag "
                    "since all backends dont support it yet"),
     llvm::cl::init(false));
 
 static llvm::cl::opt<bool> clEnableDataTiling(
-    "iree-flow-experimental-data-tiling",
+    "iree-dispatch-creation-experimental-data-tiling",
     llvm::cl::desc("Enable data-tiling at flow level, i.e., it sets encodings "
                    "in dispatch regions, hoist them out of region, and enables "
                    "fusion for the set_encodings. This is still an "

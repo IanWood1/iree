@@ -25,7 +25,7 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
-#define DEBUG_TYPE "iree-flow-set-encoding"
+#define DEBUG_TYPE "iree-dispatch-creation-set-encoding"
 
 namespace mlir::iree_compiler::DispatchCreation {
 #define GEN_PASS_DEF_SETENCODINGPASS

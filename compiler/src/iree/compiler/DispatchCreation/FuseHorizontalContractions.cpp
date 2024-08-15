@@ -29,7 +29,7 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
-#define DEBUG_TYPE "iree-flow-fuse-horizontal-contractions"
+#define DEBUG_TYPE "iree-dispatch-creation-fuse-horizontal-contractions"
 
 namespace mlir::iree_compiler::DispatchCreation {
 

@@ -22,7 +22,7 @@
 #include "mlir/Dialect/Tensor/Transforms/Transforms.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
-#define DEBUG_TYPE "iree-flow-bubble-up-expand-shapes"
+#define DEBUG_TYPE "iree-dispatch-creation-bubble-up-expand-shapes"
 
 namespace mlir::iree_compiler::DispatchCreation {
 

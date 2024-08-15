@@ -24,11 +24,11 @@ namespace mlir::iree_compiler::DispatchCreation {
 
 // TODO(thomasraoux): Move to attributes.
 static llvm::cl::opt<int64_t>
-    splitReductionRatio("iree-flow-split-matmul-reduction",
+    splitReductionRatio("iree-dispatch-creation-split-matmul-reduction",
                         llvm::cl::desc("split ratio"), llvm::cl::init(1));
 
 static llvm::cl::list<int64_t> topkSplitReductionRatio(
-    "iree-flow-topk-split-reduction",
+    "iree-dispatch-creation-topk-split-reduction",
     llvm::cl::desc("comma separated list of split ratios"),
     llvm::cl::CommaSeparated);
 

@@ -33,7 +33,7 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
-#define DEBUG_TYPE "iree-flow-collapse-dimensions"
+#define DEBUG_TYPE "iree-dispatch-creation-collapse-dimensions"
 
 namespace mlir::iree_compiler::DispatchCreation {
 

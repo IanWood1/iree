@@ -25,7 +25,7 @@
 #include "mlir/Dialect/Tensor/Transforms/Transforms.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
-#define DEBUG_TYPE "iree-flow-sink-reshapes"
+#define DEBUG_TYPE "iree-dispatch-creation-sink-reshapes"
 
 namespace mlir::iree_compiler::DispatchCreation {
 

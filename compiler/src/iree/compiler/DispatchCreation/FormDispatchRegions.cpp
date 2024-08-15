@@ -41,7 +41,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Support/LLVM.h"
 
-#define DEBUG_TYPE "iree-flow-form-dispatch-regions"
+#define DEBUG_TYPE "iree-dispatch-creation-form-dispatch-regions"
 
 static const char kRootOpAttr[] = "__root_op__";
 static const char kFusionGroupsAttr[] = "__fused_op__";

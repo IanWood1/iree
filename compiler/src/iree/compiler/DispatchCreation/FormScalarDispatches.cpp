@@ -18,7 +18,7 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/RegionUtils.h"
 
-#define DEBUG_TYPE "iree-flow-form-scalar-dispatches"
+#define DEBUG_TYPE "iree-dispatch-creation-form-scalar-dispatches"
 
 namespace mlir::iree_compiler::DispatchCreation {
 

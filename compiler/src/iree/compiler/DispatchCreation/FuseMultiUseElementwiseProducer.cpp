@@ -31,7 +31,7 @@
 #include "mlir/IR/Iterators.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
-#define DEBUG_TYPE "iree-flow-fusion-of-tensor-ops"
+#define DEBUG_TYPE "iree-dispatch-creation-fusion-of-tensor-ops"
 
 namespace mlir::iree_compiler::DispatchCreation {
 
