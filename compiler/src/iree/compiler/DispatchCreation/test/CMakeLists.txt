@@ -30,6 +30,7 @@ iree_lit_test_suite(
     "fusion_preprocessing.mlir"
     "pad_fusion_with_consumer.mlir"
     "pad_fusion_with_producer.mlir"
+    "set_encoding.mlir"
     "sink_reshapes.mlir"
     "split_reduction.mlir"
     "transform_dialect_dispatch_spec.mlir"

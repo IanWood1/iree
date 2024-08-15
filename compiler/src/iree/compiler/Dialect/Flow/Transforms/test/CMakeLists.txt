@@ -33,13 +33,8 @@ iree_lit_test_suite(
     "outline_dispatch_externs.mlir"
     "outline_dispatch_regions.mlir"
     "pipeline_tests.mlir"
-    "set_encoding.mlir"
-    "sink_reshapes.mlir"
-    "split_reduction.mlir"
     "tensor_pad_to_tensor_insert_slice.mlir"
     "top_level_scf_to_cfg.mlir"
-    "transform_dispatch_region_formation.mlir"
-    "transpose_generic_ops.mlir"
     "verify_input_ir.mlir"
   TOOLS
     FileCheck

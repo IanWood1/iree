@@ -24,7 +24,6 @@ iree_cc_library(
     Transforms
   HDRS
     "ConvertRegionToWorkgroups.h"
-    "FormDispatchRegions.h"
     "Passes.h"
     "Passes.h.inc"
     "RegionOpUtils.h"
@@ -35,6 +34,7 @@ iree_cc_library(
     "CleanupTensorShapes.cpp"
     "ConvertDispatchRegionsToWorkgroups.cpp"
     "ConvertMeshToFlow.cpp"
+    "ConvertRegionToWorkgroups.cpp"
     "ConvertTensorToFlow.cpp"
     "ConvertToFlow.cpp"
     "DeduplicateExecutables.cpp"

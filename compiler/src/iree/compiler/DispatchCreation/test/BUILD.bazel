@@ -36,6 +36,7 @@ iree_lit_test_suite(
             "transform_dispatch_region_formation.mlir",
             "transpose_generic_ops.mlir",
             "pad_fusion_with_consumer.mlir",
+            "set_encoding.mlir",
             "pad_fusion_with_producer.mlir",
         ],
         include = ["*.mlir"],

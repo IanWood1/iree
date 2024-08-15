@@ -5,8 +5,8 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #include "iree/compiler/Dialect/Flow/IR/FlowDialect.h"
-#include "iree/compiler/Dialect/Flow/Transforms/Passes.h"
 #include "iree/compiler/Dialect/LinalgExt/IR/LinalgExtDialect.h"
+#include "iree/compiler/DispatchCreation/Passes.h"
 #include "llvm/Support/CommandLine.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -20,10 +20,10 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Support/LLVM.h"
 
-namespace mlir::iree_compiler::IREE::Flow {
+namespace mlir::iree_compiler::DispatchCreation {
 
 #define GEN_PASS_DEF_DISPATCHWITHTRANSFORMDIALECTPASS
-#include "iree/compiler/Dialect/Flow/Transforms/Passes.h.inc"
+#include "iree/compiler/DispatchCreation/Passes.h.inc"
 
 /// Pass declaration.
 /// Interpreter pass that applies transform dialect ops for dispatch region
@@ -31,10 +31,10 @@ namespace mlir::iree_compiler::IREE::Flow {
 /// and ops available are different than for other interpreters.
 namespace {
 class DispatchWithTransformDialectPass
-    : public IREE::Flow::impl::DispatchWithTransformDialectPassBase<
+    : public impl::DispatchWithTransformDialectPassBase<
           DispatchWithTransformDialectPass> {
 public:
-  using IREE::Flow::impl::DispatchWithTransformDialectPassBase<
+  using impl::DispatchWithTransformDialectPassBase<
       DispatchWithTransformDialectPass>::DispatchWithTransformDialectPassBase;
   void runOnOperation() override {
     MLIRContext *context = &getContext();
@@ -67,4 +67,4 @@ private:
 
 } // namespace
 
-} // namespace mlir::iree_compiler::IREE::Flow
+} // namespace mlir::iree_compiler::DispatchCreation

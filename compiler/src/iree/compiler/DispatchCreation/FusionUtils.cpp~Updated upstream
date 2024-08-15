@@ -7,7 +7,7 @@
 //===--- FusionUtils.h --- Implementation of fusion utility functions -----===//
 //===----------------------------------------------------------------------===//
 
-#include "compiler/src/iree/compiler/DispatchCreation/FusionUtils.h"
+#include "compiler/src/iree/compiler/Dialect/Flow/Transforms/FusionUtils.h"
 #include "compiler/src/iree/compiler/Dialect/Flow/Transforms/RegionOpUtils.h"
 #include "iree/compiler/Dialect/LinalgExt/Utils/Utils.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
@@ -66,6 +66,15 @@ bool areFusableAsElementwiseOps(MLIRContext *context, OpOperand *fusedOperand,
   // fusion is fine since cloning wont result in redundant computation of the
   // producer. (Also note that the producer is always an elementwise operation).
   if (LinalgExt::isBitExtendOp(consumerOp) && !consumerOp->hasOneUse()) {
+    return false;
+  }
+
+  // Do not fuse if the producer is a bit-width truncation op and consumer is a
+  // bit width extension op. In such cases, prefer to fuse with the producer
+  // with its producer.
+  std::optional<BitWidthChangeInfo> bitWidthChangeInfo =
+      isBitExtendOrTruncateOp(producerOp);
+  if (bitWidthChangeInfo && bitWidthChangeInfo->isTruncationOp()) {
     return false;
   }
 
