@@ -27,7 +27,7 @@
 
 #define DEBUG_TYPE "iree-flow-set-encoding"
 
-namespace mlir::iree_compiler::IREE::Flow {
+namespace mlir::iree_compiler::DispatchCreation {
 #define GEN_PASS_DEF_SETENCODINGPASS
 #include "iree/compiler/DispatchCreation/Passes.h.inc"
 
@@ -337,4 +337,4 @@ public:
 };
 } // namespace
 
-} // namespace mlir::iree_compiler::IREE::Flow
+} // namespace mlir::iree_compiler::DispatchCreation

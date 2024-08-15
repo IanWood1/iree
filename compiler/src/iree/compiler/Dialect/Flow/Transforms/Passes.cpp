@@ -74,13 +74,6 @@ static llvm::cl::opt<bool> clZeroFillEmptyTensors(
         "Zero fill empty tensors instead of leaving them uninitialized."),
     llvm::cl::init(false));
 
-static llvm::cl::opt<int> clPadFactor(
-    "iree-flow-pad-factor",
-    llvm::cl::desc("Provides padding size hints that will be attached to "
-                   "encodings. This only affects the experimental data tiling "
-                   "path in Flow with iree-flow-experimental-data-tiling."),
-    llvm::cl::init(32));
-
 static llvm::cl::opt<bool> clEnableFusePaddingIntoLinalgProducerOps(
     "iree-flow-enable-fuse-padding-into-linalg-producer-ops",
     llvm::cl::desc("Enable fusing tensor.pad ops into Linalg consumer ops."),

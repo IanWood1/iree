@@ -30,7 +30,7 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
-namespace mlir::iree_compiler::IREE::Flow {
+namespace mlir::iree_compiler::DispatchCreation {
 
 #define GEN_PASS_DEF_FUSIONPREPROCESSINGPASS
 #include "iree/compiler/DispatchCreation/Passes.h.inc"
@@ -163,7 +163,8 @@ struct GatherFusionPattern : public OpRewritePattern<tensor::ExtractOp> {
 
     // Check if the producerOp is fusible
     if (producerOp.getNumDpsInputs() != 1 || producerOp.getNumResults() != 1 ||
-        !isElementwise(producerOp) || !LinalgExt::isBitExtendOp(producerOp)) {
+        !isElementwise(producerOp) ||
+        !IREE::LinalgExt::isBitExtendOp(producerOp)) {
       return rewriter.notifyMatchFailure(producerOp,
                                          "producer op is not fusible");
     }
@@ -198,8 +199,7 @@ struct GatherFusionPattern : public OpRewritePattern<tensor::ExtractOp> {
 };
 
 struct FusionPreprocessingPass
-    : public IREE::Flow::impl::FusionPreprocessingPassBase<
-          FusionPreprocessingPass> {
+    : public impl::FusionPreprocessingPassBase<FusionPreprocessingPass> {
   void runOnOperation() override {
     RewritePatternSet patterns(&getContext());
     patterns.add<ElementwiseOpInterchangePattern,
@@ -219,4 +219,4 @@ struct FusionPreprocessingPass
 
 } // namespace
 
-} // namespace mlir::iree_compiler::IREE::Flow
+} // namespace mlir::iree_compiler::DispatchCreation

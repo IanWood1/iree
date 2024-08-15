@@ -17,7 +17,7 @@
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
-namespace mlir::iree_compiler::IREE::Flow {
+namespace mlir::iree_compiler::DispatchCreation {
 
 #define GEN_PASS_DEF_SPLITREDUCTIONPASS
 #include "iree/compiler/DispatchCreation/Passes.h.inc"
@@ -52,7 +52,7 @@ static LogicalResult splitReductionOnMatmul(
 
 namespace {
 struct SplitReductionPass
-    : public IREE::Flow::impl::SplitReductionPassBase<SplitReductionPass> {
+    : public impl::SplitReductionPassBase<SplitReductionPass> {
   void runOnOperation() override {
     if (splitReductionRatio.getValue() <= 1 &&
         topkSplitReductionRatio.empty()) {
@@ -76,7 +76,7 @@ struct SplitReductionPass
       (void)splitReductionOnMatmul(rewriter, op, matmulSplitReductionControlFn);
     }
 
-    LinalgExt::TopkSplitReductionControlFn topkSplitReductionControlFn =
+    IREE::LinalgExt::TopkSplitReductionControlFn topkSplitReductionControlFn =
         [&](int64_t splitReductionDepth) -> int64_t {
       SmallVector<int64_t> reductionRatios(topkSplitReductionRatio.begin(),
                                            topkSplitReductionRatio.end());
@@ -87,8 +87,9 @@ struct SplitReductionPass
       }
     };
 
-    SmallVector<LinalgExt::TopkOp> topkCandidates;
-    funcOp->walk([&](LinalgExt::TopkOp op) { topkCandidates.push_back(op); });
+    SmallVector<IREE::LinalgExt::TopkOp> topkCandidates;
+    funcOp->walk(
+        [&](IREE::LinalgExt::TopkOp op) { topkCandidates.push_back(op); });
     for (auto op : topkCandidates) {
       (void)splitReduction(rewriter, op, topkSplitReductionControlFn);
     }
@@ -97,4 +98,4 @@ struct SplitReductionPass
 
 } // namespace
 
-} // namespace mlir::iree_compiler::IREE::Flow
+} // namespace mlir::iree_compiler::DispatchCreation

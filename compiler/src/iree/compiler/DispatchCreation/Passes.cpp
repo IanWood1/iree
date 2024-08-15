@@ -43,6 +43,13 @@ static llvm::cl::opt<bool> clEnableFusePaddingIntoLinalgProducerOps(
     llvm::cl::desc("Enable fusing tensor.pad ops into Linalg consumer ops."),
     llvm::cl::init(false));
 
+static llvm::cl::opt<int> clPadFactor(
+    "iree-flow-pad-factor",
+    llvm::cl::desc("Provides padding size hints that will be attached to "
+                   "encodings. This only affects the experimental data tiling "
+                   "path in Flow with iree-flow-experimental-data-tiling."),
+    llvm::cl::init(32));
+
 static llvm::cl::opt<bool> clEnableFuseHorizontalContractions(
     "iree-flow-enable-fuse-horizontal-contractions",
     llvm::cl::desc(
@@ -77,10 +84,7 @@ static llvm::cl::opt<bool> clEnableDataTiling(
 
 namespace mlir::iree_compiler::DispatchCreation {
 
-static std::unique_ptr<Pass>
-createCanonicalizerPass(const GreedyRewriteConfig &config,
-                        ArrayRef<std::string> disabledPatterns,
-                        ArrayRef<std::string> enabledPatterns) {
+static std::unique_ptr<Pass> createCanonicalizerPass() {
   assert(false && "TODO");
 }
 

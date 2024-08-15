@@ -16,7 +16,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/RegionUtils.h"
 
-namespace mlir::iree_compiler::DispatchCreation {
+namespace mlir::iree_compiler::IREE::Flow {
 
 namespace {
 
@@ -253,4 +253,4 @@ rewriteFlowDispatchRegionToFlowDispatchWorkgroups(
   return workgroupsOp;
 }
 
-} // namespace mlir::iree_compiler::DispatchCreation
+} // namespace mlir::iree_compiler::IREE::Flow

@@ -51,7 +51,7 @@ void ElementwiseOpFusionPass::runOnOperation() {
         Operation *producer = fusedOperand->get().getDefiningOp();
         Operation *consumer = fusedOperand->getOwner();
 
-        if (!isNonNullAndOutsideDispatch({producer, consumer})) {
+        if (!IREE::Flow::isNonNullAndOutsideDispatch({producer, consumer})) {
           return false;
         }
 

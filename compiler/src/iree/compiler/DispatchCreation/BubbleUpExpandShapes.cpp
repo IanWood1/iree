@@ -49,12 +49,12 @@ void BubbleUpExpandShapesPass::runOnOperation() {
       [](OpOperand *fusedOperand) {
         Operation *producer = fusedOperand->get().getDefiningOp();
         Operation *consumer = fusedOperand->getOwner();
-        if (!isNonNullAndOutsideDispatch({producer, consumer})) {
+        if (!IREE::Flow::isNonNullAndOutsideDispatch({producer, consumer})) {
           return false;
         }
 
         // Do not fuse by expand if consumer is dequant.
-        if (LinalgExt::isBitExtendOp(consumer)) {
+        if (IREE::LinalgExt::isBitExtendOp(consumer)) {
           return false;
         }
 

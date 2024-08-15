@@ -16,7 +16,7 @@
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
-namespace mlir::iree_compiler::IREE::Flow {
+namespace mlir::iree_compiler::DispatchCreation {
 
 #define GEN_PASS_DEF_TRANSPOSEGENERICOPSPASS
 #include "iree/compiler/DispatchCreation/Passes.h.inc"
@@ -113,8 +113,7 @@ struct TransposeGenericOpPattern : public OpRewritePattern<linalg::GenericOp> {
 };
 
 struct TransposeGenericOpsPass
-    : public IREE::Flow::impl::TransposeGenericOpsPassBase<
-          TransposeGenericOpsPass> {
+    : public impl::TransposeGenericOpsPassBase<TransposeGenericOpsPass> {
   void runOnOperation() override {
     RewritePatternSet patterns(&getContext());
     patterns.add<MakeReductionInnermostPattern, TransposeGenericOpPattern>(
@@ -128,4 +127,4 @@ struct TransposeGenericOpsPass
 
 } // namespace
 
-} // namespace mlir::iree_compiler::IREE::Flow
+} // namespace mlir::iree_compiler::DispatchCreation

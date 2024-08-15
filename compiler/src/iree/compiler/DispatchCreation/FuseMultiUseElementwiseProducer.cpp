@@ -33,7 +33,7 @@
 
 #define DEBUG_TYPE "iree-flow-fusion-of-tensor-ops"
 
-namespace mlir::iree_compiler::IREE::Flow {
+namespace mlir::iree_compiler::DispatchCreation {
 
 #define GEN_PASS_DEF_FUSEMULTIUSEELEMENTWISEPRODUCERPASS
 #include "iree/compiler/DispatchCreation/Passes.h.inc"
@@ -147,7 +147,7 @@ static FailureOr<unsigned> fuseMultiUseProducers(Operation *funcOp,
   DenseMap<Operation *, Operation *> opToRootMap;
   funcOp->walk<WalkOrder::PostOrder, ReverseIterator>(
       [&](linalg::GenericOp genericOp) {
-        if (!isNonNullAndOutsideDispatch(genericOp)) {
+        if (!IREE::Flow::isNonNullAndOutsideDispatch(genericOp)) {
           return;
         }
 
@@ -158,7 +158,7 @@ static FailureOr<unsigned> fuseMultiUseProducers(Operation *funcOp,
 
         // Dequantization-like operations should be fused with consumers to keep
         // the smaller bit width on the dispatch boundary.
-        if (LinalgExt::isBitExtendOp(genericOp)) {
+        if (IREE::LinalgExt::isBitExtendOp(genericOp)) {
           return;
         }
 
@@ -198,7 +198,7 @@ static FailureOr<unsigned> fuseMultiUseProducers(Operation *funcOp,
 
           // 7. Skip dequantization-like `producer` ops as we would rather fuse
           //    by cloning the producer instead of multi-use fusion.
-          if (LinalgExt::isBitExtendOp(producer)) {
+          if (IREE::LinalgExt::isBitExtendOp(producer)) {
             return;
           }
 
@@ -250,9 +250,9 @@ namespace {
 /// Pass to fuse linalg on tensor operations as well as fusion of hal.interface*
 /// operations with linalg.tensor_reshape operation.
 struct FuseMultiUseElementwiseProducerPass
-    : public IREE::Flow::impl::FuseMultiUseElementwiseProducerPassBase<
+    : public impl::FuseMultiUseElementwiseProducerPassBase<
           FuseMultiUseElementwiseProducerPass> {
-  using IREE::Flow::impl::FuseMultiUseElementwiseProducerPassBase<
+  using impl::FuseMultiUseElementwiseProducerPassBase<
       FuseMultiUseElementwiseProducerPass>::
       FuseMultiUseElementwiseProducerPassBase;
   void runOnOperation() override;
@@ -281,4 +281,4 @@ void FuseMultiUseElementwiseProducerPass::runOnOperation() {
   }
 }
 
-} // namespace mlir::iree_compiler::IREE::Flow
+} // namespace mlir::iree_compiler::DispatchCreation

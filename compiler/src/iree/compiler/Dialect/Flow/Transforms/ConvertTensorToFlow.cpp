@@ -43,8 +43,8 @@ static FailureOr<IREE::Flow::DispatchWorkgroupsOp>
 wrapInWorkgroupsOp(mlir::TensorDimTrackingRewriter &rewriter, Operation *op) {
 
   SmallVector<tensor::DimOp> dimOps = rewriter.getTensorDimOps();
-  if (failed(iree_compiler::IREE::Flow::simplifyDimOps(
-          rewriter, rewriter.getTensorDimOps())))
+  if (failed(DispatchCreation::simplifyDimOps(rewriter,
+                                              rewriter.getTensorDimOps())))
     return failure();
 
   // Wrap operation.
