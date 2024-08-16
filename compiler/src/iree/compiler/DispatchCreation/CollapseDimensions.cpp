@@ -42,7 +42,7 @@ namespace mlir::iree_compiler::DispatchCreation {
 
 namespace {
 /// Pass declaration.
-struct CollapseDimensionsPass
+struct CollapseDimensionsPass final
     : public impl::CollapseDimensionsPassBase<CollapseDimensionsPass> {
   void runOnOperation() override;
 };

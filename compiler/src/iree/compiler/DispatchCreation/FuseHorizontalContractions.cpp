@@ -38,7 +38,7 @@ namespace mlir::iree_compiler::DispatchCreation {
 
 namespace {
 
-struct FuseHorizontalContractionsPass
+struct FuseHorizontalContractionsPass final
     : public impl::FuseHorizontalContractionsPassBase<
           FuseHorizontalContractionsPass> {
   using Base::Base;

@@ -7,6 +7,7 @@
 #include "iree/compiler/DispatchCreation/Passes.h"
 
 #include "iree/compiler/Codegen/Common/PassUtils.h"
+#include "iree/compiler/Dialect/Flow/Transforms/Passes.h"
 #include "mlir/Dialect/Linalg/Passes.h"
 #include "mlir/Pass/PassOptions.h"
 #include "mlir/Pass/PassRegistry.h"
@@ -85,9 +86,8 @@ static llvm::cl::opt<bool> clEnableDataTiling(
 
 namespace mlir::iree_compiler::DispatchCreation {
 
-static std::unique_ptr<Pass> createCanonicalizerPass() {
-  assert(false && "TODO");
-}
+using FunctionLikeNest =
+    MultiOpNest<func::FuncOp, IREE::Util::InitializerOp, IREE::Util::FuncOp>;
 
 //===----------------------------------------------------------------------===//
 // Pipelines
@@ -102,14 +102,14 @@ void addDispatchRegionCreationPreprocessingPasses(OpPassManager &passManager) {
             ElementwiseOpFusionPassOptions{
                 clEnableElementWiseFuseMultiReduction});
       })
-      .addPass(DispatchCreation::createCanonicalizerPass)
+      .addPass(IREE::Flow::createCanonicalizerPass)
       .addPass(mlir::createCSEPass)
 
       // 2. Bubble up expand_shape ops (or sink collapse_shape ops) to get
       //    elementwise operation into higher dimensions for more fusion
       //    opportunities.
       .addPass(DispatchCreation::createBubbleUpExpandShapesPass)
-      .addPass(DispatchCreation::createCanonicalizerPass)
+      .addPass(IREE::Flow::createCanonicalizerPass)
       .addPass(mlir::createCSEPass)
 
       // 3. Perform elementwise operation fusion again (now with higher
@@ -119,13 +119,13 @@ void addDispatchRegionCreationPreprocessingPasses(OpPassManager &passManager) {
             ElementwiseOpFusionPassOptions{
                 clEnableElementWiseFuseMultiReduction});
       })
-      .addPass(DispatchCreation::createCanonicalizerPass)
+      .addPass(IREE::Flow::createCanonicalizerPass)
       .addPass(mlir::createCSEPass)
 
       // 4. After elementwise operation fusion sink reshapes that block
       //    producer-consumer fusion.
       .addPass(DispatchCreation::createSinkReshapesPass)
-      .addPass(DispatchCreation::createCanonicalizerPass)
+      .addPass(IREE::Flow::createCanonicalizerPass)
       .addPass(mlir::createCSEPass);
 
   if (clEnableFuseHorizontalContractions) {
@@ -145,7 +145,7 @@ void addDispatchRegionCreationPreprocessingPasses(OpPassManager &passManager) {
       //       TODO: This is probably not in the right place.
       .addPredicatedPass(clDetensoring,
                          [&]() { return mlir::createLinalgDetensorizePass(); })
-      .addPass(DispatchCreation::createCanonicalizerPass)
+      .addPass(IREE::Flow::createCanonicalizerPass)
       .addPass(mlir::createCSEPass)
 
       //    b. For ops with multiple reduction dimensions, collapse the
@@ -214,7 +214,7 @@ void buildDispatchCreationPassPipeline(
   FunctionLikeNest(passManager)
       // Preprocess the input to a form more amenable for fusion.
       .addPass(DispatchCreation::createFusionPreprocessingPass)
-      .addPass(DispatchCreation::createCanonicalizerPass)
+      .addPass(IREE::Flow::createCanonicalizerPass)
       .addPass(mlir::createCSEPass);
 
   addDispatchRegionCreationPreprocessingPasses(passManager);
@@ -229,6 +229,23 @@ namespace {
 void registerDispatchCreationPasses() {
   // Generated from Passes.td
   registerPasses();
+}
+
+void registerDispatchCreationPipelines() {
+  PassPipelineRegistration<TransformOptions> flowDispatchRegionCreationPipeline(
+      "iree-dispatch-creation-pipeline",
+      "Flag used to run passes that form dispatch regions",
+      [](OpPassManager &passManager, const TransformOptions &transformOptions) {
+        buildDispatchCreationPassPipeline(passManager, transformOptions);
+      });
+
+  PassPipelineRegistration<> flowDispatchRegionFormationPreprocessingPipeline(
+      "iree-dispatch-creation-preprocessing-pipeline",
+      "Flag used to run preprocessing passes that run passes before dispatch "
+      "region formation. Used only for testing",
+      [](OpPassManager &passManager) {
+        addDispatchRegionCreationPreprocessingPasses(passManager);
+      });
 }
 
 } // namespace mlir::iree_compiler::DispatchCreation

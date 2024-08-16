@@ -68,7 +68,7 @@ collapseDimensions(linalg::LinalgOp linalgOp) {
   return collapseIndices;
 }
 
-struct CollapseReductionDimensionsPass
+struct CollapseReductionDimensionsPass final
     : public impl::CollapseReductionDimensionsPassBase<
           CollapseReductionDimensionsPass> {
   void runOnOperation() override {

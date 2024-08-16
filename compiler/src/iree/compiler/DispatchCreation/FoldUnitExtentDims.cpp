@@ -107,7 +107,7 @@ foldUnitDimsOnGlobal(IRRewriter &rewriter, IREE::Util::GlobalOpInterface global,
 }
 
 namespace {
-struct FoldUnitExtentDimsPass
+struct FoldUnitExtentDimsPass final
     : public impl::FoldUnitExtentDimsPassBase<FoldUnitExtentDimsPass> {
   void runOnOperation() override;
 };

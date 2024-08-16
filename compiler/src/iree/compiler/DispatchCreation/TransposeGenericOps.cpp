@@ -29,7 +29,7 @@ namespace {
 
 /// For generic ops that are reduction, make the reduction the innermost
 /// dimension.
-struct MakeReductionInnermostPattern
+struct MakeReductionInnermostPattern final
     : public OpRewritePattern<linalg::GenericOp> {
   using OpRewritePattern<linalg::GenericOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(linalg::GenericOp genericOp,
@@ -62,7 +62,8 @@ struct MakeReductionInnermostPattern
 /// ops), the dispatch region fusion logic requires the indexing maps to be
 /// identity (or projections that are not transposing as well). This pattern
 /// fixes up elementwise operations for which that is not the case.
-struct TransposeGenericOpPattern : public OpRewritePattern<linalg::GenericOp> {
+struct TransposeGenericOpPattern final
+    : public OpRewritePattern<linalg::GenericOp> {
   using OpRewritePattern<linalg::GenericOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(linalg::GenericOp genericOp,
                                 PatternRewriter &rewriter) const override {
@@ -112,7 +113,7 @@ struct TransposeGenericOpPattern : public OpRewritePattern<linalg::GenericOp> {
   }
 };
 
-struct TransposeGenericOpsPass
+struct TransposeGenericOpsPass final
     : public impl::TransposeGenericOpsPassBase<TransposeGenericOpsPass> {
   void runOnOperation() override {
     RewritePatternSet patterns(&getContext());

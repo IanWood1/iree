@@ -31,11 +31,8 @@ namespace mlir::iree_compiler::DispatchCreation {
 
 namespace {
 
-class BubbleUpExpandShapesPass
+struct BubbleUpExpandShapesPass final
     : public impl::BubbleUpExpandShapesPassBase<BubbleUpExpandShapesPass> {
-public:
-  using Base::Base;
-
   void runOnOperation() override;
 };
 

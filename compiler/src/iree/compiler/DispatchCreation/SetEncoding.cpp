@@ -293,7 +293,7 @@ private:
 
 /// Pattern to fold a `linalg.fill` -> `iree_encoding.set_encoding`
 /// operation into a `linalg.fill` of the encoded type.
-struct FoldFillWithSetEncoding
+struct FoldFillWithSetEncoding final
     : public OpRewritePattern<IREE::Encoding::SetEncodingOp> {
   using OpRewritePattern<IREE::Encoding::SetEncodingOp>::OpRewritePattern;
 
@@ -317,11 +317,9 @@ struct FoldFillWithSetEncoding
   }
 };
 
-class SetEncodingPass : public impl::SetEncodingPassBase<SetEncodingPass> {
-
-public:
+struct SetEncodingPass final
+    : public impl::SetEncodingPassBase<SetEncodingPass> {
   using Base::Base;
-
   void runOnOperation() override {
     MLIRContext *context = &getContext();
     RewritePatternSet patterns(context);

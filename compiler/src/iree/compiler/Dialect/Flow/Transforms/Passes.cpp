@@ -313,22 +313,6 @@ void registerFlowTransformPassPipeline() {
       [](OpPassManager &passManager, const TransformOptions &transformOptions) {
         buildFlowTransformPassPipeline(passManager, transformOptions);
       });
-
-  // PassPipelineRegistration<>
-  // flowDispatchRegionFormationPreprocessingPipeline(
-  //     "iree-flow-dispatch-region-formation-preprocessing-pipeline",
-  //     "Flag used to run preprocessing passes that run passes before dispatch
-  //     " "region formation. Used only for testing",
-  //     [](OpPassManager &passManager) {
-  //       addDispatchRegionCreationPreprocessingPasses(passManager);
-  //     });
-  //
-  // PassPipelineRegistration<> flowDispatchRegionCreationPipeline(
-  //     "iree-flow-dispatch-region-creation-pipeline",
-  //     "Flag used to run passes that form dispatch regions",
-  //     [](OpPassManager &passManager) {
-  //       addDispatchRegionToWorkgroupPasses(passManager);
-  //     });
 }
 
 namespace {

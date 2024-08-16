@@ -21,7 +21,7 @@ namespace mlir::iree_compiler::DispatchCreation {
 
 namespace {
 
-struct CloneProducersIntoDispatchRegionsPass
+struct CloneProducersIntoDispatchRegionsPass final
     : public impl::CloneProducersIntoDispatchRegionsPassBase<
           CloneProducersIntoDispatchRegionsPass> {
   void runOnOperation() override {

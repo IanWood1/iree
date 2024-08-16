@@ -30,12 +30,10 @@ namespace mlir::iree_compiler::DispatchCreation {
 /// formation. This needs to be its own pass because the registration mechanism
 /// and ops available are different than for other interpreters.
 namespace {
-class DispatchWithTransformDialectPass
+struct DispatchWithTransformDialectPass final
     : public impl::DispatchWithTransformDialectPassBase<
           DispatchWithTransformDialectPass> {
-public:
-  using impl::DispatchWithTransformDialectPassBase<
-      DispatchWithTransformDialectPass>::DispatchWithTransformDialectPassBase;
+  using Base::Base;
   void runOnOperation() override {
     MLIRContext *context = &getContext();
     // Load the module from the spec path. The module will be unloaded once the

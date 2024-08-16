@@ -28,7 +28,7 @@ namespace mlir::iree_compiler::DispatchCreation {
 namespace {
 
 /// Pass declaration.
-struct FormScalarDispatchesPass
+struct FormScalarDispatchesPass final
     : public impl::FormScalarDispatchesPassBase<FormScalarDispatchesPass> {
   void runOnOperation() override;
 };

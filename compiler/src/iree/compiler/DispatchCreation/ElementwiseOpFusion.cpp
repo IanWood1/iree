@@ -28,12 +28,9 @@ namespace mlir::iree_compiler::DispatchCreation {
 
 namespace {
 
-class ElementwiseOpFusionPass
+struct ElementwiseOpFusionPass final
     : public impl::ElementwiseOpFusionPassBase<ElementwiseOpFusionPass> {
-
-public:
   using Base::Base;
-
   void runOnOperation() override;
 };
 

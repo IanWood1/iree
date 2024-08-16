@@ -41,9 +41,9 @@ namespace {
 // ElementwiseOpInterchangePattern
 //===----------------------------------------------------------------------===//
 
-struct ElementwiseOpInterchangePattern
+struct ElementwiseOpInterchangePattern final
     : public OpRewritePattern<linalg::GenericOp> {
-  using OpRewritePattern<linalg::GenericOp>::OpRewritePattern;
+  using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(linalg::GenericOp genericOp,
                                 PatternRewriter &rewriter) const override {
     if (!linalg::isElementwise(genericOp) || genericOp.getNumResults() != 1)
@@ -81,7 +81,7 @@ struct ElementwiseOpInterchangePattern
 /// %2 = linalg.fill ins(%cst : )
 /// %3 = tensor.insert_slice %a into %2
 /// ```
-struct FoldSuccessiveTensorInsertSliceOps
+struct FoldSuccessiveTensorInsertSliceOps final
     : public OpRewritePattern<tensor::InsertSliceOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(tensor::InsertSliceOp sliceOp,
@@ -143,8 +143,8 @@ struct FoldSuccessiveTensorInsertSliceOps
 // cannot be fused because it there is no producer-consumer
 // relationship between the two generics. This is because the indexing
 // is not affine (index values come from a tensor).
-struct GatherFusionPattern : public OpRewritePattern<tensor::ExtractOp> {
-  using OpRewritePattern<tensor::ExtractOp>::OpRewritePattern;
+struct GatherFusionPattern final : public OpRewritePattern<tensor::ExtractOp> {
+  using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(tensor::ExtractOp extractOp,
                                 PatternRewriter &rewriter) const override {
     // Check if extractOp is inside a generic op
@@ -198,7 +198,7 @@ struct GatherFusionPattern : public OpRewritePattern<tensor::ExtractOp> {
   }
 };
 
-struct FusionPreprocessingPass
+struct FusionPreprocessingPass final
     : public impl::FusionPreprocessingPassBase<FusionPreprocessingPass> {
   void runOnOperation() override {
     RewritePatternSet patterns(&getContext());
