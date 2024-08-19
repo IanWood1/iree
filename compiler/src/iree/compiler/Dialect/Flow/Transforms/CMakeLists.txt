@@ -50,7 +50,6 @@ iree_cc_library(
     "OutlineDispatchRegions.cpp"
     "Passes.cpp"
     "RegionOpUtils.cpp"
-    "TensorPadToTensorInsertSlice.cpp"
     "TopLevelSCFToCFG.cpp"
     "VerifyInputLegality.cpp"
   DEPS

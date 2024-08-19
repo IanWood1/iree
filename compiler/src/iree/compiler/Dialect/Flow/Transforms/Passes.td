@@ -31,23 +31,6 @@ def MaterializeDefaultWorkgroupCountRegionPass:
       ];
 }
 
-def TensorPadToTensorInsertSlicePass :
-    Pass<"iree-flow-tensor-pad-to-tensor-insert-slice", ""> {
-  let summary = "Convert tensor.pad into linalg.fill + tensor.insert_slice.";
-  let options = [
-    Option<"skipSingleLinalgOpUses", "skip-one-linalg-use-case", "bool",
-           /*default=*/"false",
-           "Skip the op that has only one use which is used"
-           "by a Linalg op">,
-  ];
-  let dependentDialects = [
-    "mlir::arith::ArithDialect",
-    "mlir::linalg::LinalgDialect",
-    "mlir::math::MathDialect",
-    "mlir::memref::MemRefDialect",
-  ];
-}
-
 def ConvertDispatchRegionsToWorkgroupsPass :
     InterfacePass<"iree-flow-convert-dispatch-regions-to-workgroups", "mlir::FunctionOpInterface"> {
   let summary = "Convert dispatch regions to dispatch workgroups.";

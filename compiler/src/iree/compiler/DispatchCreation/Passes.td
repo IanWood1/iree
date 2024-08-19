@@ -17,6 +17,23 @@ include "mlir/Pass/PassBase.td"
 // - Reshape propagation passes
 //===---------------------------------------------------------------------===//
 
+def TensorPadToTensorInsertSlicePass :
+    Pass<"iree-dispatch-creation-tensor-pad-to-tensor-insert-slice"> {
+  let summary = "Convert tensor.pad into linalg.fill + tensor.insert_slice.";
+  let options = [
+    Option<"skipSingleLinalgOpUses", "skip-one-linalg-use-case", "bool",
+           /*default=*/"false",
+           "Skip the op that has only one use which is used"
+           "by a Linalg op">,
+  ];
+  let dependentDialects = [
+    "mlir::arith::ArithDialect",
+    "mlir::linalg::LinalgDialect",
+    "mlir::math::MathDialect",
+    "mlir::memref::MemRefDialect",
+  ];
+}
+
 def BubbleUpExpandShapesPass :
     Pass<"iree-dispatch-creation-bubble-up-expand-shapes"> {
   let summary = "Propagate expand_shapes up the program (and collapse_shapes down).";

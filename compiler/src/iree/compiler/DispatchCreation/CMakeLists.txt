@@ -35,6 +35,7 @@ iree_cc_library(
     "SetEncoding.cpp"
     "SinkReshapes.cpp"
     "SplitReduction.cpp"
+    "TensorPadToTensorInsertSlice.cpp"
     "TransposeGenericOps.cpp"
   DEPS
     ::PassHeaders

@@ -53,11 +53,6 @@ static llvm::cl::opt<std::string> clTraceDispatch(
                    "occurrences of the dispatch symbol."),
     llvm::cl::init(""));
 
-static llvm::cl::opt<bool> clEnablePadHandling(
-    "iree-flow-enable-pad-handling",
-    llvm::cl::desc("Enable native handling of tensor.pad operations."),
-    llvm::cl::init(false));
-
 static llvm::cl::opt<bool>
     clDumpDispatchGraph("iree-flow-dump-dispatch-graph",
                         llvm::cl::desc("Dump a dot graph for dispatches."),
@@ -148,36 +143,6 @@ void buildFlowTransformPassPipeline(OpPassManager &passManager,
                                     const TransformOptions &transformOptions) {
   // Start of Flow pipeline, verify input legality.
   passManager.addPass(IREE::Flow::createVerifyInputLegalityPass());
-
-  // Inject tensor tracing early as we need to have the tracers in the IR
-  // prior to dispatch region formation where we may lose access to them.
-  FunctionLikeNest(passManager)
-      .addPass(IREE::Flow::createInjectTensorTracingPass);
-
-  // Transform pad operations into linalg.fill + tensor.insert_slice.
-  // This is a WAR for not having native pad handling.
-  if (!clEnablePadHandling && !clEnableFusePaddingIntoLinalgProducerOps) {
-    passManager.addPass(IREE::Flow::createTensorPadToTensorInsertSlicePass(
-        TensorPadToTensorInsertSlicePassOptions{
-            /*skipSingleLinalgOpUses=*/
-            clEnableFusePaddingIntoLinalgConsumerOps}));
-  }
-
-  {
-    // We run these under a fixed-point iteration such that we can perform
-    // inter-procedural, intra-procedural, and canonicalization as separably
-    // verifiable/reusable passes. IPO will fold duplicate arguments/results
-    // and inline constants to allow the local optimizations to work more
-    // effectively.
-    OpPassManager ipoPipeline(mlir::ModuleOp::getOperationName());
-
-    // IPO and other cleanups.
-    addCleanupPatterns(ipoPipeline);
-
-    // Run fixed-point iteration on the IPO pipeline.
-    passManager.addPass(
-        IREE::Util::createFixedPointIteratorPass(std::move(ipoPipeline)));
-  }
 
   addDispatchRegionToWorkgroupPasses(passManager, transformOptions);
 

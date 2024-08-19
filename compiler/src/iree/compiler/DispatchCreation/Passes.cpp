@@ -8,6 +8,7 @@
 
 #include "iree/compiler/Codegen/Common/PassUtils.h"
 #include "iree/compiler/Dialect/Flow/Transforms/Passes.h"
+#include "iree/compiler/Dialect/Util/Transforms/Passes.h"
 #include "mlir/Dialect/Linalg/Passes.h"
 #include "mlir/Pass/PassOptions.h"
 #include "mlir/Pass/PassRegistry.h"
@@ -52,6 +53,11 @@ static llvm::cl::opt<int> clPadFactor(
         "path in Flow with iree-dispatch-creation-experimental-data-tiling."),
     llvm::cl::init(32));
 
+static llvm::cl::opt<bool> clEnablePadHandling(
+    "iree-flow-enable-pad-handling",
+    llvm::cl::desc("Enable native handling of tensor.pad operations."),
+    llvm::cl::init(false));
+
 static llvm::cl::opt<bool> clEnableFuseHorizontalContractions(
     "iree-dispatch-creation-enable-fuse-horizontal-contractions",
     llvm::cl::desc(
@@ -85,6 +91,32 @@ static llvm::cl::opt<bool> clEnableDataTiling(
     llvm::cl::init(false));
 
 namespace mlir::iree_compiler::DispatchCreation {
+
+//===----------------------------------------------------------------------===//
+// Utilities
+//===----------------------------------------------------------------------===//
+
+static void addCleanupPatterns(OpPassManager &passManager) {
+  FunctionLikeNest(passManager)
+      // Standard MLIR cleanup.
+      .addPass(IREE::Flow::createCanonicalizerPass)
+      .addPass(mlir::createCSEPass)
+
+      // Simplify util.global accesses; this can help with data flow tracking as
+      // redundant store-loads are removed.
+      .addPass(IREE::Util::createSimplifyGlobalAccessesPass);
+
+  // Cleanup and canonicalization of util.global (and other util ops).
+  passManager.addPass(IREE::Util::createApplyPatternsPass());
+  passManager.addPass(IREE::Util::createFoldGlobalsPass());
+  passManager.addPass(IREE::Util::createFuseGlobalsPass());
+
+  // Large IPO pass. Note that this can introduce a significant amount of
+  // duplication/inlined constants and we'll want to ensure we're running
+  // cleanup again after (this entire set of patterns is run in a fixed-point
+  // iteration to do that).
+  passManager.addPass(IREE::Util::createIPOPass());
+}
 
 using FunctionLikeNest =
     MultiOpNest<func::FuncOp, IREE::Util::InitializerOp, IREE::Util::FuncOp>;
@@ -211,6 +243,38 @@ static void addDispatchRegionCreationPasses(OpPassManager &passManager) {
 // Apply preprocessing and form dispatch regions
 void buildDispatchCreationPassPipeline(
     OpPassManager &passManager, const TransformOptions &transformOptions) {
+
+  // Inject tensor tracing early as we need to have the tracers in the IR
+  // prior to dispatch region formation where we may lose access to them.
+  FunctionLikeNest(passManager)
+      .addPass(IREE::Flow::createInjectTensorTracingPass);
+
+  // Transform pad operations into linalg.fill + tensor.insert_slice.
+  // This is a WAR for not having native pad handling.
+  if (!clEnablePadHandling && !clEnableFusePaddingIntoLinalgProducerOps) {
+    passManager.addPass(
+        DispatchCreation::createTensorPadToTensorInsertSlicePass(
+            TensorPadToTensorInsertSlicePassOptions{
+                /*skipSingleLinalgOpUses=*/
+                clEnableFusePaddingIntoLinalgConsumerOps}));
+  }
+
+  {
+    // We run these under a fixed-point iteration such that we can perform
+    // inter-procedural, intra-procedural, and canonicalization as separably
+    // verifiable/reusable passes. IPO will fold duplicate arguments/results
+    // and inline constants to allow the local optimizations to work more
+    // effectively.
+    OpPassManager ipoPipeline(mlir::ModuleOp::getOperationName());
+
+    // IPO and other cleanups.
+    addCleanupPatterns(ipoPipeline);
+
+    // Run fixed-point iteration on the IPO pipeline.
+    passManager.addPass(
+        IREE::Util::createFixedPointIteratorPass(std::move(ipoPipeline)));
+  }
+
   FunctionLikeNest(passManager)
       // Preprocess the input to a form more amenable for fusion.
       .addPass(DispatchCreation::createFusionPreprocessingPass)
