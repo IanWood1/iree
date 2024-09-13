@@ -14,42 +14,8 @@
 #include "mlir/Dialect/Utils/StructuredOpsUtils.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
-#include "mlir/IR/Dominance.h"
-#include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Support/LLVM.h"
-
-//===----------------------------------------------------------------------===//
-// Definition of TensorDimTrackingRewriter
-//===----------------------------------------------------------------------===//
-
-namespace mlir {
-
-TensorDimTrackingRewriter::TensorDimTrackingRewriter(Operation *op)
-    : IRRewriter(op->getContext()) {
-  setListener(this);
-  op->walk([&](tensor::DimOp dimOp) { dimOps.insert(dimOp.getOperation()); });
-}
-SmallVector<tensor::DimOp> TensorDimTrackingRewriter::getTensorDimOps() {
-  SmallVector<tensor::DimOp> result;
-  for (Operation *op : dimOps)
-    result.push_back(cast<tensor::DimOp>(op));
-  return result;
-}
-void TensorDimTrackingRewriter::notifyOperationErased(Operation *op) {
-  IRRewriter::Listener::notifyOperationErased(op);
-  if (isa<tensor::DimOp>(op))
-    dimOps.erase(op);
-}
-
-void TensorDimTrackingRewriter::notifyOperationInserted(Operation *op,
-                                                        InsertPoint previous) {
-  IRRewriter::Listener::notifyOperationInserted(op, previous);
-  if (isa<tensor::DimOp>(op))
-    dimOps.insert(op);
-}
-
-} // namespace mlir
 
 namespace mlir::iree_compiler::IREE::Flow {
 

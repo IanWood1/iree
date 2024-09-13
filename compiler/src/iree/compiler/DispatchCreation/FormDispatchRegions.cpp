@@ -26,6 +26,7 @@
 #include "mlir/Dialect/Linalg/Utils/Utils.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/Tensor/Utils/Utils.h"
 #include "mlir/Dialect/Utils/StructuredOpsUtils.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"
@@ -834,7 +835,7 @@ decideFusableLinalgOps(Region &region, DominanceInfo const &dominanceInfo,
 
 /// Create IREE::Flow::DispatchGroupsOps based on a fusion heuristic.
 static LogicalResult
-createFusionGroups(TensorDimTrackingRewriter &rewriter,
+createFusionGroups(tensor::TensorDimTrackingRewriter &rewriter,
                    mlir::FunctionOpInterface funcOp,
                    DominanceInfo const &dominanceInfo,
                    FormDispatchRegionsPassOptions const &options) {
@@ -939,7 +940,7 @@ struct FormDispatchRegionsPass final
 void FormDispatchRegionsPass::runOnOperation() {
   mlir::FunctionOpInterface funcOp = getOperation();
   DominanceInfo const &dominanceInfo = getAnalysis<DominanceInfo>();
-  TensorDimTrackingRewriter rewriter(funcOp);
+  tensor::TensorDimTrackingRewriter rewriter(funcOp);
   FormDispatchRegionsPassOptions options{aggressiveFusion, fusePadWithConsumers,
                                          fusePadWithProducers};
   if (failed(createFusionGroups(rewriter, funcOp, dominanceInfo, options))) {

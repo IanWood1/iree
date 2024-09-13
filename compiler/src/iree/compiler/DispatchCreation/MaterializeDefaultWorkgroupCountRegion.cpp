@@ -18,6 +18,7 @@
 #include "mlir/Dialect/MemRef/Transforms/Transforms.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/Tensor/Utils/Utils.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
@@ -110,7 +111,7 @@ struct MaterializeDefaultWorkgroupCountRegionPass
 // populates the workgroup count region.
 void MaterializeDefaultWorkgroupCountRegionPass::runOnOperation() {
   FunctionOpInterface funcOp = getOperation();
-  TensorDimTrackingRewriter rewriter(funcOp);
+  tensor::TensorDimTrackingRewriter rewriter(funcOp);
 
   // Populate the workgroup_count region of flow.dispatch.workgroups operation
   // that dont already have a region

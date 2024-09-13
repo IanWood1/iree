@@ -15,6 +15,7 @@
 #include "mlir/Dialect/MemRef/Transforms/Transforms.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/Tensor/Utils/Utils.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
@@ -39,7 +40,7 @@ struct ConvertDispatchRegionsToWorkgroupsPass
 // Creates a DispatchWorkgroupsOp for every DispatchRegionOp.
 void ConvertDispatchRegionsToWorkgroupsPass::runOnOperation() {
   FunctionOpInterface funcOp = getOperation();
-  TensorDimTrackingRewriter rewriter(funcOp);
+  tensor::TensorDimTrackingRewriter rewriter(funcOp);
 
   SmallVector<IREE::Flow::DispatchRegionOp> regionOps;
   funcOp.walk(

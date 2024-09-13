@@ -17,6 +17,7 @@
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MemRef/Transforms/Transforms.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/Tensor/Utils/Utils.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/PatternMatch.h"
@@ -40,7 +41,7 @@ static bool isInDispatchRegion(Operation *op) {
 
 /// Wrap a single op in a DispatchWorkgroupsOp.
 static FailureOr<IREE::Flow::DispatchWorkgroupsOp>
-wrapInWorkgroupsOp(mlir::TensorDimTrackingRewriter &rewriter, Operation *op) {
+wrapInWorkgroupsOp(tensor::TensorDimTrackingRewriter &rewriter, Operation *op) {
 
   SmallVector<tensor::DimOp> dimOps = rewriter.getTensorDimOps();
   if (failed(IREE::Flow::simplifyDimOps(rewriter, rewriter.getTensorDimOps())))
@@ -62,7 +63,7 @@ wrapInWorkgroupsOp(mlir::TensorDimTrackingRewriter &rewriter, Operation *op) {
 
 /// Wrap all given ops in a DispatchWorkgroupsOp.
 static FailureOr<SmallVector<IREE::Flow::DispatchWorkgroupsOp>>
-wrapInWorkgroupsOp(mlir::TensorDimTrackingRewriter &rewriter,
+wrapInWorkgroupsOp(tensor::TensorDimTrackingRewriter &rewriter,
                    SmallVector<Operation *> rootOps) {
   SmallVector<IREE::Flow::DispatchWorkgroupsOp> result;
   for (Operation *rootOp : rootOps) {
@@ -78,7 +79,8 @@ wrapInWorkgroupsOp(mlir::TensorDimTrackingRewriter &rewriter,
 /// dispatch region. Returns the number of dispatches for non-contiguous insert
 /// slices created.
 static FailureOr<int> convertInsertSliceOps(
-    mlir::TensorDimTrackingRewriter &rewriter, mlir::FunctionOpInterface funcOp,
+    tensor::TensorDimTrackingRewriter &rewriter,
+    mlir::FunctionOpInterface funcOp,
     SmallVector<IREE::Flow::DispatchWorkgroupsOp> &workgroupsOps) {
   // Find eligible InsertSliceOps.
   SmallVector<tensor::InsertSliceOp> insertSliceOps;
@@ -112,7 +114,8 @@ static FailureOr<int> convertInsertSliceOps(
 /// dispatch region. Returns the number of dispatches for non-contiguous extract
 /// slices created.
 static FailureOr<size_t> convertExtractSliceOps(
-    mlir::TensorDimTrackingRewriter &rewriter, mlir::FunctionOpInterface funcOp,
+    tensor::TensorDimTrackingRewriter &rewriter,
+    mlir::FunctionOpInterface funcOp,
     SmallVector<IREE::Flow::DispatchWorkgroupsOp> &workgroupsOps) {
   // Find eligible ExtractSliceOps.
   SmallVector<tensor::ExtractSliceOp> extractSliceOps;
@@ -153,7 +156,7 @@ struct ConvertTensorToFlowPass
 
 void ConvertTensorToFlowPass::runOnOperation() {
   mlir::FunctionOpInterface funcOp = getOperation();
-  mlir::TensorDimTrackingRewriter rewriter(funcOp);
+  tensor::TensorDimTrackingRewriter rewriter(funcOp);
   mlir::MLIRContext *context = &getContext();
 
   auto workgroupsOps = SmallVector<IREE::Flow::DispatchWorkgroupsOp>();
