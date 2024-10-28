@@ -40,6 +40,7 @@ iree_lit_test_suite(
             "fuse_multiuse_elementwise_producer.mlir",
             "fusion_preprocessing.mlir",
             "pad_fusion_with_consumer.mlir",
+            "clone_producers_into_generic_op.mlir",
             "pad_fusion_with_producer.mlir",
             "set_encoding.mlir",
             "sink_reshapes.mlir",

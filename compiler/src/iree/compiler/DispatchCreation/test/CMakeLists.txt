@@ -17,6 +17,7 @@ iree_lit_test_suite(
     "attention_fuse_by_expansion.mlir"
     "bubble_up_extract_slice.mlir"
     "clone_producers_into_dispatch_regions.mlir"
+    "clone_producers_into_generic_op.mlir"
     "collapse_dimensions.mlir"
     "collapse_linalg_generic_on_tensors.mlir"
     "collapse_reduction.mlir"
