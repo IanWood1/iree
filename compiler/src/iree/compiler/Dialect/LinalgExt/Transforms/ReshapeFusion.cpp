@@ -18,6 +18,9 @@
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/PatternMatch.h"
 
+using namespace mlir;
+using namespace mlir::iree_compiler::IREE;
+
 namespace mlir::iree_compiler::IREE::LinalgExt {
 
 namespace {
@@ -246,8 +249,7 @@ getReassociationForExpansion(AffineMap indexingMap,
   return reassociation;
 }
 
-template <typename OpTy>
-static bool isFusableWithReshapeByDimExpansion(OpTy op,
+static bool isFusableWithReshapeByDimExpansion(AttentionOp op,
                                                OpOperand *fusableOpOperand) {
   // Is fusable only if:
   // - All the indexing maps for operands and results are projected
@@ -256,11 +258,29 @@ static bool isFusableWithReshapeByDimExpansion(OpTy op,
   // - All the loops for the reshaped operand are parallel loops.
   SmallVector<utils::IteratorType> iteratorTypes = op.getLoopIteratorTypes();
   AffineMap operandMap = op.getMatchingIndexingMap(fusableOpOperand);
-  return op.hasPureTensorSemantics() &&
-         llvm::all_of(
-             op.getIndexingMapsArray(),
-             [](AffineMap map) { return map.isProjectedPermutation(); }) &&
+  return operandMap && op.hasPureTensorSemantics() &&
+         llvm::all_of(op.getIndexingMapsArray(),
+                      [](AffineMap map) {
+                        return map && map.isProjectedPermutation();
+                      }) &&
          operandMap.getNumResults() > 0;
+}
+
+/// Determine if a reshape operand of a `iree_linalg_ext.scatter` can be fused
+/// with the scatter by expansion.
+static bool isFusableWithReshapeByDimExpansion(ScatterOp scatterOp,
+                                               OpOperand *fusableOpOperand) {
+  Operation *reshapeOp = fusableOpOperand->getOwner() == scatterOp
+                             ? fusableOpOperand->get().getDefiningOp()
+                             : fusableOpOperand->getOwner();
+  auto expandingReshapeOp = dyn_cast<tensor::ExpandShapeOp>(*reshapeOp);
+  auto collapsingReshapeOp = dyn_cast<tensor::CollapseShapeOp>(*reshapeOp);
+  bool isExpanding = (expandingReshapeOp != nullptr);
+  (void)collapsingReshapeOp;
+  (void)isExpanding;
+
+  // TODO(): implement
+  return true;
 }
 
 static std::optional<SmallVector<Value>> fuseAttentionWithReshapeByExpansion(
@@ -390,6 +410,19 @@ static std::optional<SmallVector<Value>> fuseAttentionWithReshapeByExpansion(
   // Assuming a single result.
   return resultVals;
 }
+
+static std::optional<SmallVector<Value>>
+fuseScatterWithReshapeByExpansion(ScatterOp scatterOp, Operation *reshapeOp,
+                                  OpOperand *fusableOpOperand,
+                                  PatternRewriter &rewriter) {
+  assert(isFusableWithReshapeByDimExpansion(scatterOp, fusableOpOperand) &&
+         "preconditions for fuse operation failed");
+  return {};
+}
+
+//===----------------------------------------------------------------------===//
+// Fuse By Expansion Patterns
+//===----------------------------------------------------------------------===//
 
 namespace {
 
@@ -546,6 +579,39 @@ struct FoldScatterUnitDims final : public OpRewritePattern<ScatterOp> {
   }
 
   linalg::ControlDropUnitDims options;
+};
+
+struct FoldScatterWithProducerReshapeByExpansion final
+    : public OpRewritePattern<ScatterOp> {
+  FoldScatterWithProducerReshapeByExpansion(
+      MLIRContext *context, linalg::ControlFusionFn controlFoldingReshapes,
+      PatternBenefit benefit = 1)
+      : OpRewritePattern<ScatterOp>(context, benefit),
+        controlFoldingReshapes(std::move(controlFoldingReshapes)) {}
+
+  LogicalResult matchAndRewrite(ScatterOp scatterOp,
+                                PatternRewriter &rewriter) const override {
+    for (OpOperand *opOperand : scatterOp.getDpsInputOperands()) {
+      tensor::CollapseShapeOp reshapeOp =
+          opOperand->get().getDefiningOp<tensor::CollapseShapeOp>();
+      if (!reshapeOp)
+        continue;
+      if (!isFusableWithReshapeByDimExpansion(scatterOp, opOperand) ||
+          (!controlFoldingReshapes(opOperand)))
+        continue;
+
+      std::optional<SmallVector<Value>> replacementValues =
+          fuseScatterWithReshapeByExpansion(scatterOp, reshapeOp, opOperand,
+                                            rewriter);
+      if (!replacementValues)
+        return failure();
+      rewriter.replaceOp(scatterOp, *replacementValues);
+      return success();
+    }
+    return failure();
+  }
+
+  linalg::ControlFusionFn controlFoldingReshapes;
 };
 
 } // namespace
@@ -767,6 +833,8 @@ void populateFoldReshapeOpsByExpansionPatterns(
   patterns.add<FoldAttentionWithConsumerReshapeByExpansion>(
       patterns.getContext(), controlFoldingReshapes);
   patterns.add<FoldAttentionWithProducerReshapeByExpansion>(
+      patterns.getContext(), controlFoldingReshapes);
+  patterns.add<FoldScatterWithProducerReshapeByExpansion>(
       patterns.getContext(), controlFoldingReshapes);
 }
 

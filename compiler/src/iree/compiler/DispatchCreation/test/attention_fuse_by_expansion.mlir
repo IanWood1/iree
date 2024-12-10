@@ -481,3 +481,39 @@ util.func public @dont_sink_through_k2(%0 : tensor<128x64x128x1x1xf16>, %1 : ten
 //  CHECK-SAME:       affine_map<(d0, d1, d2, d3, d4) -> (d0, d1, d4)>
 //  CHECK-SAME:       ins(%[[ARG2]], %[[ARG1]], %[[COLLAPSED]], %[[ARG3]] :
 //       CHECK:   util.return %[[ATTENTION]]
+
+
+// -----
+
+util.func @scatter_collapse(%arg0: tensor<4x?x2x16x4x128xf16>, %arg1: tensor<?x1xi32>, %arg2: tensor<?x2x16x4x128xf16>) -> tensor<?x2x16x4x128xf16> {
+  %collapsed = tensor.collapse_shape %arg0[[0, 1], [2], [3], [4], [5]] : tensor<4x?x2x16x4x128xf16> into tensor<?x2x16x4x128xf16>
+  %1 = iree_linalg_ext.scatter dimension_map = [0] unique_indices(true) ins(%collapsed, %arg1 : tensor<?x2x16x4x128xf16>, tensor<?x1xi32>) outs(%arg2 : tensor<?x2x16x4x128xf16>) {
+  ^bb0(%arg7: f16, %arg8: f16):
+    iree_linalg_ext.yield %arg7 : f16
+  } -> tensor<?x2x16x4x128xf16>
+  util.return %1 : tensor<?x2x16x4x128xf16>
+}
+
+// CHECK-LABEL: util.func public @scatter_collapse
+//  CHECK-SAME:     %[[ARG0:[a-zA-Z0-9]+]]:
+//  CHECK-SAME:     %[[ARG1:[a-zA-Z0-9]+]]:
+//  CHECK-SAME:     %[[ARG2:[a-zA-Z0-9]+]]:
+//       CHECK:   %[[SCATTER:.+]] = iree_linalg_ext.scatter
+//  CHECK-SAME:       ins(%[[ARG0]], %[[ARG1]]
+
+// -----
+
+util.func @scatter_collapse(%arg0: tensor<4x?x2x16x4x128xf16>, %arg1: tensor<?x2xi32>, %arg2: tensor<4x?x2x16x4x128xf16>) -> tensor<4x?x2x16x4x128xf16> {
+  %1 = iree_linalg_ext.scatter dimension_map = [0, 1] unique_indices(true) ins(%arg0, %arg1 : tensor<4x?x2x16x4x128xf16>, tensor<?x2xi32>) outs(%arg2 : tensor<4x?x2x16x4x128xf16>) {
+  ^bb0(%arg7: f16, %arg8: f16):
+    iree_linalg_ext.yield %arg7 : f16
+  } -> tensor<4x?x2x16x4x128xf16>
+  util.return %1 : tensor<4x?x2x16x4x128xf16>
+}
+
+// CHECK-LABEL: util.func public @scatter_collapse
+//  CHECK-SAME:     %[[ARG0:[a-zA-Z0-9]+]]:
+//  CHECK-SAME:     %[[ARG1:[a-zA-Z0-9]+]]:
+//  CHECK-SAME:     %[[ARG2:[a-zA-Z0-9]+]]:
+//       CHECK:   %[[SCATTER:.+]] = iree_linalg_ext.scatter
+//  CHECK-SAME:       ins(%[[ARG0]], %[[ARG1]]
