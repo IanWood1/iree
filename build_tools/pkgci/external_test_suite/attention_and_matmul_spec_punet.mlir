@@ -552,7 +552,7 @@ transform.named_sequence @match_matmul_like_Bx20x64x64x2048_transposev_i8xi8xi32
         , @match_mmt_2048x1280x1280 -> @apply_op_config
         , @match_mmt_8192x640x640 -> @apply_op_config
         , @match_mmt_8192x5120x640 -> @apply_op_config
-        , @match_mmt_8192x640x2560 -> @apply_op_config
+        //, @match_mmt_8192x640x2560 -> @apply_op_config
 
         // Convolution.
 
