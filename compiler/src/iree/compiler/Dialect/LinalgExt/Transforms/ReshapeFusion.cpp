@@ -505,20 +505,16 @@ struct FoldScatterUnitDims final : public OpRewritePattern<ScatterOp> {
           scatterOp, "Only reassociative reshape strategy supported");
     }
     llvm::SmallVector<unsigned> canDrop = options.controlFn(scatterOp);
-
-    // TODO: use the actual rank once it has been added.
-    constexpr int64_t batchRank = 1;
     const ArrayRef<int64_t> updateShape = scatterOp.getUpdateType().getShape();
 
     // Find the first `numDimsToDrop` unit dimensions in the update tensor,
     // these are the ones that can be dropped.
-    int64_t numDimsToDrop = 0;
-    for (auto val : updateShape.drop_front(batchRank)) {
-      if (val != 1) {
-        break;
-      }
-      ++numDimsToDrop;
-    }
+    int64_t numDimsToDrop =
+        llvm::find_if(scatterOp.getUpdateSliceShape(),
+                      [](int64_t val) { return val != 1; }) -
+        updateShape.begin() - 1;
+
+    int64_t batchRank = scatterOp.getBatchRank();
     llvm::erase_if(canDrop, [&](unsigned dimPos) {
       return dimPos < batchRank || dimPos >= batchRank + numDimsToDrop;
     });
@@ -543,9 +539,8 @@ struct FoldScatterUnitDims final : public OpRewritePattern<ScatterOp> {
                               scatterOp.getUpdateType().getElementType()),
         scatterOp.getUpdates(), reassoc.value());
 
-    constexpr int64_t kUpdateOpNum = 0;
     rewriter.modifyOpInPlace(scatterOp, [&]() {
-      scatterOp.setOperand(kUpdateOpNum, collapseOp.getResult());
+      scatterOp.setOperand(ScatterOp::kUpdatesOpNum, collapseOp.getResult());
     });
     return success();
   }
