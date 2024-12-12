@@ -115,15 +115,29 @@ def IREELinalgExt_ScatterOp : IREELinalgExt_Op<"scatter",
     value to be updated (i.e. from `updates`), and the second the
     current value (i.e. value from `original`).
 
-    The `indices` is a 2D tensor/memref type. The first dim is the number of
-    updates, and the second dim is index depth. The index depth should always be
-    static.
+    The operand `indices` is a N-D tensor/memref type is composed
+    of two logical parts:
+    - The first `N-1` dimensions represent the batch of updates.
+    - The last dim (at index `N-1`) is the index depth, which should
+      always be static.
 
-    The first dim of `updates` and `indices` is identical, since they represent
-    the number of updates.
+    The operand `update` is a M-D tensor/memref type and similarly
+    consists of two parts:
+    - The first `N-1` dimensions represent the batch of updates. This
+      must exactly match to the first `N-1` dimensions in `indices`
+      because they represent the number of updates.
+    - Dimensions `N..M-1` represent the slice scattered into `original`.
+      The slice may also be rank-reduced, but only leading unit dimensions
+      may be omitted.
 
-    The rank of the `original`/`result` is at least
-    `index_depth + rank(%updates) - 1`. The first `index_depth` indices are
+    The operand `original` is a DPS init representing the destination that
+    `update` gets scattered to.
+
+    The portion of `update` representing the slice scattered into `original`
+    (`N..M-1`) must not be larger than the rank of `original` but may be
+    less in the rank-reducing case.
+
+    The rank of the `original` is at least `index_depth + rank(%updates) - 1`. The first `index_depth` indices are
     derived from `indices` and the shape of update value has the last
     rank(%original) - index_depth values match %(originals) last dimensions,
     with the previous dims extending from the index offsets.
@@ -157,6 +171,9 @@ def IREELinalgExt_ScatterOp : IREELinalgExt_Op<"scatter",
     $region (`->` type($results)^)?
   }];
   let extraClassDeclaration = extraLinalgExtOpClassDeclaration # [{
+    static constexpr unsigned kUpdatesOpNum = 0;
+    static constexpr unsigned kIndiciesOpNum = 1;
+    static constexpr unsigned kOriginalOpNum = 2;
 
     int64_t getIndexDepth() {
       return cast<ShapedType>(getDpsInputOperand(1)->get().getType())
@@ -188,8 +205,21 @@ def IREELinalgExt_ScatterOp : IREELinalgExt_Op<"scatter",
       return cast<ShapedType>(getOriginal().getType());
     }
 
+    int64_t getBatchRank() {
+      return getIndicesType().getRank() - 1;
+    }
+
+    ArrayRef<int64_t> getBatchShape() {
+      return getIndicesType().getShape().slice(0, getBatchRank());
+    }
+
     int64_t getUpdateSliceRank() {
-      return cast<ShapedType>(getUpdates().getType()).getRank() - 1;
+      return getUpdateType().getRank() - getBatchRank();
+    }
+
+    ArrayRef<int64_t> getUpdateSliceShape() {
+      return getUpdateType().getShape().slice(getBatchRank(),
+                                              getUpdateSliceRank());
     }
 
     bool isScalarUpdate() {
