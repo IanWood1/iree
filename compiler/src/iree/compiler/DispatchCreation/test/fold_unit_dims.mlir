@@ -109,8 +109,8 @@ module @fold_stream_parameter {
 
 // -----
 
-util.func public @scatter0(%arg0: tensor<?x1x16x4x128xf16>, %arg1: tensor<?x1xi32>, %arg2: tensor<?x2x16x4x128xf16>) -> tensor<?x2x16x4x128xf16> {
-  %0 = iree_linalg_ext.scatter dimension_map = [0] unique_indices(true) ins(%arg0, %arg1 : tensor<?x1x16x4x128xf16>, tensor<?x1xi32>) outs(%arg2 : tensor<?x2x16x4x128xf16>) {
+util.func public @scatter0(%arg0: tensor<?x1x2x16x4x128xf16>, %arg1: tensor<?x1xi32>, %arg2: tensor<?x2x16x4x128xf16>) -> tensor<?x2x16x4x128xf16> {
+  %0 = iree_linalg_ext.scatter dimension_map = [0] unique_indices(true) ins(%arg0, %arg1 : tensor<?x1x2x16x4x128xf16>, tensor<?x1xi32>) outs(%arg2 : tensor<?x2x16x4x128xf16>) {
   ^bb0(%arg3: f16, %arg4: f16):
     iree_linalg_ext.yield %arg3 : f16
   } -> tensor<?x2x16x4x128xf16>
@@ -118,14 +118,14 @@ util.func public @scatter0(%arg0: tensor<?x1x16x4x128xf16>, %arg1: tensor<?x1xi3
 }
 // CHECK-LABEL: func public @scatter0
 //       CHECK:   %[[COLLAPSE:.+]] = tensor.collapse_shape
-//  CHECK-SAME:     to tensor<?x16x4x128xf16>
+//  CHECK-SAME:     to tensor<?x2x16x4x128xf16>
 //       CHECK:   %[[SCATTER:.+]] = iree_linalg_ext.scatter
 //  CHECK-SAME:     ins(%[[COLLAPSE]]
 
 // -----
 
-util.func public @scatter1(%arg0: tensor<?x1x1x16x4x128xf16>, %arg1: tensor<?x1xi32>, %arg2: tensor<?x2x16x4x128xf16>) -> tensor<?x2x16x4x128xf16> {
-  %0 = iree_linalg_ext.scatter dimension_map = [0] unique_indices(true) ins(%arg0, %arg1 : tensor<?x1x1x16x4x128xf16>, tensor<?x1xi32>) outs(%arg2 : tensor<?x2x16x4x128xf16>) {
+util.func public @scatter1(%arg0: tensor<?x1x1x16x4x128xf16>, %arg1: tensor<?x2xi32>, %arg2: tensor<?x2x16x4x128xf16>) -> tensor<?x2x16x4x128xf16> {
+  %0 = iree_linalg_ext.scatter dimension_map = [0, 1] unique_indices(true) ins(%arg0, %arg1 : tensor<?x1x1x16x4x128xf16>, tensor<?x2xi32>) outs(%arg2 : tensor<?x2x16x4x128xf16>) {
   ^bb0(%arg3: f16, %arg4: f16):
     iree_linalg_ext.yield %arg3 : f16
   } -> tensor<?x2x16x4x128xf16>
