@@ -175,19 +175,37 @@ LogicalResult ScatterOp::verify() {
            << originalType.getRank() << ")";
   }
 
-  // Validate the non-indexed update dims cover the full slice size of the
-  // original tensor.
-  for (auto it : llvm::zip(llvm::reverse(llvm::seq<unsigned>(
-                               indexDepth, originalType.getRank())),
-                           llvm::reverse(llvm::seq<unsigned>(
-                               batchRank, updateType.getRank())))) {
-    int64_t originalDim = std::get<0>(it);
-    int64_t updateDim = std::get<1>(it);
+  // Full update slice: |- Implicit Ones -|- partial slice -|- full slice -|
+  //
+  // indexDepth = implicit ones + partial slice
+  // updateSlice[0..indexDepth] <= original[0..indexDepth]
+  // updateSlice[indexDepth..] == original[indexDepth..]
+
+  auto numImplicitDims = originalType.getRank() - getUpdateSliceRank();
+  auto updateSliceShape = getUpdateSliceShape();
+  for (uint64_t fullSliceIdx :
+       llvm::seq<uint64_t>(numImplicitDims, indexDepth)) {
+    int64_t originalDim = fullSliceIdx;
+    int64_t updateSliceDim = fullSliceIdx - numImplicitDims;
     if (!originalType.isDynamicDim(originalDim) &&
-        updateType.getDimSize(updateDim) >
+        updateSliceShape[updateSliceDim] >
             originalType.getDimSize(originalDim)) {
       return op->emitOpError("shape of update value dim#")
-             << updateDim << " exceeds original value at dim#" << originalDim;
+             << updateSliceDim + batchRank << " exceeds original value at dim#"
+             << originalDim;
+    }
+  }
+
+  for (auto fullSliceIdx :
+       llvm::seq<int64_t>(indexDepth, originalType.getRank())) {
+    int64_t originalDim = fullSliceIdx;
+    int64_t updateSliceDim = fullSliceIdx - numImplicitDims;
+    if (!originalType.isDynamicDim(originalDim) &&
+        updateSliceShape[updateSliceDim] !=
+            originalType.getDimSize(originalDim)) {
+      return op->emitOpError("shape of update value dim#")
+             << updateSliceDim + batchRank
+             << " must match original value at dim#" << originalDim;
     }
   }
 
