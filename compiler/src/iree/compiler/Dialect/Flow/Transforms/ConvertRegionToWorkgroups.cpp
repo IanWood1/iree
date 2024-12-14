@@ -209,9 +209,8 @@ rewriteFlowDispatchRegionToFlowDispatchWorkgroups(
   rewriter.mergeBlocks(origEntry, newBodyEntry);
 
   for (Value argument : arguments) {
-    argument.replaceUsesWithIf(bvm.lookup(argument), [&](OpOperand &operand) {
-      return workgroupsOp->isProperAncestor(operand.getOwner());
-    });
+    mlir::replaceAllUsesInRegionWith(argument, bvm.lookup(argument),
+                                     workgroupsOp.getWorkgroupBody());
   }
 
   // Update terminator.
