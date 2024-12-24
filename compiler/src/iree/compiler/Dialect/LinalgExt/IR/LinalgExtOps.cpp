@@ -97,6 +97,25 @@ static bool isInvalid(ArrayRef<int64_t> dimsPos, int64_t rank) {
       dimsPos, [rank](int64_t dimPos) { return dimPos < 0 || dimPos >= rank; });
 }
 
+/// Return true if `seq` is invalid. It is only valid when it is a permutation
+/// of the sequence 0...length(seq) - 1.
+static bool isInvalid(ArrayRef<int64_t> seq) {
+  BitVector seen(seq.size(), false);
+  int64_t sum = 0;
+  for (int64_t dim : seq) {
+    if (dim < 0 || dim >= seq.size()) {
+      return true;
+    }
+    if (seen.test(dim)) {
+      return true;
+    }
+    seen.set(dim);
+    sum += dim;
+  }
+  int64_t targetSum = (seq.size() * (seq.size() - 1)) / 2;
+  return sum != targetSum;
+}
+
 /// Returns true if the dimension of `sourceShape` is smaller than the dimension
 /// of the `limitShape`.
 static bool isSmallerThan(ArrayRef<int64_t> sourceShape,
@@ -144,7 +163,7 @@ LogicalResult ScatterOp::verify() {
   }
 
   auto originalType = getOriginalType();
-  if (isInvalid(dimMap, originalType.getRank())) {
+  if (isInvalid(dimMap)) {
     return op->emitOpError("dimension map is invalid");
   }
 

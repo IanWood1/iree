@@ -105,6 +105,22 @@ func.func @scatter_invalid_dim_map_entries(
 
 // -----
 
+func.func @scatter_invalid_dim_map_entries(
+    %update : tensor<?x?xf32>, %indices : tensor<?x1xi32>,
+    %original : tensor<?x?xf32>) -> tensor<?x?xf32> {
+  // expected-error @+1 {{dimension map is invalid}}
+  %0 = iree_linalg_ext.scatter dimension_map = [1] unique_indices(true)
+      ins(%update, %indices : tensor<?x?xf32>, tensor<?x1xi32>)
+      outs(%original : tensor<?x?xf32>) {
+      ^bb0(%arg1: f32, %arg2: f32):
+        %1 = arith.addf %arg1, %arg2 : f32
+        iree_linalg_ext.yield %1 : f32
+      } -> tensor<?x?xf32>
+  return %0 : tensor<?x?xf32>
+}
+
+// -----
+
 func.func @scatter_output_type_mismatch(
     %update : tensor<?x?xf32>, %indices : tensor<?x1xi32>,
     %original : tensor<?x?xf32>) -> tensor<4x?xf32> {
