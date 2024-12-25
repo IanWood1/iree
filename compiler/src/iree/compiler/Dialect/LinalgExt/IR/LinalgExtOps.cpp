@@ -21,6 +21,7 @@
 #include "mlir/Dialect/Linalg/Utils/Utils.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/Transform/Interfaces/TransformInterfaces.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/Dialect/Utils/StructuredOpsUtils.h"
 #include "mlir/IR/AffineExpr.h"
@@ -97,23 +98,24 @@ static bool isInvalid(ArrayRef<int64_t> dimsPos, int64_t rank) {
       dimsPos, [rank](int64_t dimPos) { return dimPos < 0 || dimPos >= rank; });
 }
 
-/// Return true if `seq` is invalid. It is only valid when it is a permutation
-/// of the sequence 0...length(seq) - 1.
-static bool isInvalid(ArrayRef<int64_t> seq) {
+/// Emit an error and return failure when `seq` is invalid. It is only valid
+/// when it is a permutation of the sequence 0...length(seq) - 1.
+static LogicalResult
+isPermSequence(function_ref<InFlightDiagnostic()> emitError,
+               ArrayRef<int64_t> seq) {
   BitVector seen(seq.size(), false);
-  int64_t sum = 0;
-  for (int64_t dim : seq) {
+  for (auto [idx, dim] : llvm::enumerate(seq)) {
     if (dim < 0 || dim >= seq.size()) {
-      return true;
+      return emitError().attachNote() << "element (" << dim << ") at index#"
+                                      << idx << " is out of bounds";
     }
     if (seen.test(dim)) {
-      return true;
+      return emitError().attachNote()
+             << "element (" << dim << ") at index#" << idx << " is a duplicate";
     }
     seen.set(dim);
-    sum += dim;
   }
-  int64_t targetSum = (seq.size() * (seq.size() - 1)) / 2;
-  return sum != targetSum;
+  return success();
 }
 
 /// Returns true if the dimension of `sourceShape` is smaller than the dimension
@@ -163,8 +165,10 @@ LogicalResult ScatterOp::verify() {
   }
 
   auto originalType = getOriginalType();
-  if (isInvalid(dimMap)) {
-    return op->emitOpError("dimension map is invalid");
+  if (failed(isPermSequence(
+          [&]() { return this->emitOpError("dimension map is invalid."); },
+          dimMap))) {
+    return failure();
   }
 
   if (indexDepth > originalType.getShape().size()) {

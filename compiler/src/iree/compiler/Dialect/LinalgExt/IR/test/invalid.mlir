@@ -76,7 +76,8 @@ func.func @scatter_mistmatch_dim_map_entries(
 func.func @scatter_duplicate_dim_map_entries(
     %update : tensor<?x?xf32>, %indices : tensor<?x2xi32>,
     %original : tensor<?x?xf32>) -> tensor<?x?xf32> {
-  // expected-error @+1 {{dimension map is invalid}}
+  // expected-error @below {{'iree_linalg_ext.scatter' op dimension map is invalid.}}
+  // expected-note @below {{element (1) at index#1 is a duplicate}}
   %0 = iree_linalg_ext.scatter dimension_map = [1, 1] unique_indices(true)
       ins(%update, %indices : tensor<?x?xf32>, tensor<?x2xi32>)
       outs(%original : tensor<?x?xf32>) {
@@ -92,7 +93,8 @@ func.func @scatter_duplicate_dim_map_entries(
 func.func @scatter_invalid_dim_map_entries(
     %update : tensor<?x?xf32>, %indices : tensor<?x1xi32>,
     %original : tensor<?x?xf32>) -> tensor<?x?xf32> {
-  // expected-error @+1 {{dimension map is invalid}}
+  // expected-error @below {{'iree_linalg_ext.scatter' op dimension map is invalid.}}
+  // expected-note @below {{element (2) at index#0 is out of bounds}}
   %0 = iree_linalg_ext.scatter dimension_map = [2] unique_indices(true)
       ins(%update, %indices : tensor<?x?xf32>, tensor<?x1xi32>)
       outs(%original : tensor<?x?xf32>) {
@@ -108,7 +110,8 @@ func.func @scatter_invalid_dim_map_entries(
 func.func @scatter_invalid_dim_map_entries(
     %update : tensor<?x?xf32>, %indices : tensor<?x1xi32>,
     %original : tensor<?x?xf32>) -> tensor<?x?xf32> {
-  // expected-error @+1 {{dimension map is invalid}}
+  // expected-error @below {{'iree_linalg_ext.scatter' op dimension map is invalid.}}
+  // expected-note @below {{element (1) at index#0 is out of bounds}}
   %0 = iree_linalg_ext.scatter dimension_map = [1] unique_indices(true)
       ins(%update, %indices : tensor<?x?xf32>, tensor<?x1xi32>)
       outs(%original : tensor<?x?xf32>) {
