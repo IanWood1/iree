@@ -209,18 +209,26 @@ def IREELinalgExt_ScatterOp : IREELinalgExt_Op<"scatter",
       return cast<ShapedType>(getOriginal().getType());
     }
 
+    /// Utility to get the rank of the portion of `indices` that
+    /// represents the batch dimensions
     int64_t getBatchRank() {
       return getIndicesType().getRank() - 1;
     }
 
+    /// Utility to get the shape of the portion of `indices` that
+    /// represents the batch dimensions.
     ArrayRef<int64_t> getBatchShape() {
       return getIndicesType().getShape().slice(0, getBatchRank());
     }
 
+    /// Utility to get the rank of the portion of `updates` that
+    /// is scattered into `original`.
     int64_t getUpdateSliceRank() {
       return getUpdateType().getRank() - getBatchRank();
     }
 
+    /// Utility to get the shape of the portion of `updates` that
+    /// is scattered into `original`.
     ArrayRef<int64_t> getUpdateSliceShape() {
       return getUpdateType().getShape().slice(getBatchRank(),
                                               getUpdateSliceRank());
