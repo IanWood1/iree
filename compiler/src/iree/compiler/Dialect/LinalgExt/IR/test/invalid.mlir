@@ -401,6 +401,24 @@ func.func @scatter_index_depth_dynamic(
 
 // -----
 
+func.func @scatter_index_depth_too_large(
+    %original: tensor<?x?xf32>, %indices: tensor<?x3xi32>,
+    %update: tensor<?x?xf32>) -> tensor<?x?xf32> {
+  // expected-error @below {{'iree_linalg_ext.scatter' op index depth is greater than the rank of the original value}}
+  %0 = iree_linalg_ext.scatter
+    dimension_map = [0, 1, 2]
+    unique_indices(true)
+    ins(%update, %indices : tensor<?x?xf32>, tensor<?x3xi32>)
+    outs(%original: tensor<?x?xf32>) {
+    ^bb0(%arg1: f32, %arg2: f32):
+      %1 = arith.addf %arg1, %arg2 : f32
+      iree_linalg_ext.yield %1 : f32
+    } -> tensor<?x?xf32>
+  return %0 : tensor<?x?xf32>
+}
+
+// -----
+
 func.func @topk_invalid(%input_values: tensor<2x10xf32>, %input_indices: tensor<2x10xi32>, %out_values : tensor<2x3xf32>, %out_indices: tensor<2x3xi32>) -> (tensor<2x3xf32>, tensor<2x3xi32>) {
   // expected-error@+1 {{expected one or two input operands}}
   %0:2 = iree_linalg_ext.topk

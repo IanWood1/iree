@@ -167,6 +167,11 @@ LogicalResult ScatterOp::verify() {
     return op->emitOpError("dimension map is invalid");
   }
 
+  if (indexDepth > originalType.getShape().size()) {
+    return op->emitOpError(
+        "index depth is greater than the rank of the original value");
+  }
+
   auto updateType = getUpdateType();
   auto batchRank = indicesType.getRank() - 1;
   if (updateType.getRank() < batchRank) {
@@ -194,12 +199,8 @@ LogicalResult ScatterOp::verify() {
            << originalType.getRank() << ")";
   }
 
-  // Full update slice: |- Implicit Ones -|- partial slice -|- full slice -|
-  //
-  // indexDepth = implicit ones + partial slice
   // updateSlice[0..indexDepth] <= original[0..indexDepth]
   // updateSlice[indexDepth..] == original[indexDepth..]
-
   auto numImplicitDims = originalType.getRank() - getUpdateSliceRank();
   auto updateSliceShape = getUpdateSliceShape();
   for (uint64_t fullSliceIdx :
