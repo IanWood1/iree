@@ -12,6 +12,7 @@
 #include "iree/compiler/Dialect/LinalgExt/IR/LinalgExtInterfaces.h"
 #include "iree/compiler/Dialect/LinalgExt/IR/LinalgExtOps.h"
 #include "iree/compiler/Dialect/LinalgExt/Transforms/Transforms.h"
+#include "mlir/Dialect/Arith/Utils/Utils.h"
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Utils/StructuredOpsUtils.h"
@@ -266,23 +267,6 @@ static bool isFusableWithReshapeByDimExpansion(AttentionOp op,
          operandMap.getNumResults() > 0;
 }
 
-/// Determine if a reshape operand of a `iree_linalg_ext.scatter` can be fused
-/// with the scatter by expansion.
-static bool isFusableWithReshapeByDimExpansion(ScatterOp scatterOp,
-                                               OpOperand *fusableOpOperand) {
-  Operation *reshapeOp = fusableOpOperand->getOwner() == scatterOp
-                             ? fusableOpOperand->get().getDefiningOp()
-                             : fusableOpOperand->getOwner();
-  auto expandingReshapeOp = dyn_cast<tensor::ExpandShapeOp>(*reshapeOp);
-  auto collapsingReshapeOp = dyn_cast<tensor::CollapseShapeOp>(*reshapeOp);
-  bool isExpanding = (expandingReshapeOp != nullptr);
-  (void)collapsingReshapeOp;
-  (void)isExpanding;
-
-  // TODO(): implement
-  return true;
-}
-
 static std::optional<SmallVector<Value>> fuseAttentionWithReshapeByExpansion(
     AttentionOp attentionOp, Operation *reshapeOp, OpOperand *fusableOpOperand,
     PatternRewriter &rewriter) {
@@ -415,8 +399,40 @@ static std::optional<SmallVector<Value>>
 fuseScatterWithReshapeByExpansion(ScatterOp scatterOp, Operation *reshapeOp,
                                   OpOperand *fusableOpOperand,
                                   PatternRewriter &rewriter) {
-  assert(isFusableWithReshapeByDimExpansion(scatterOp, fusableOpOperand) &&
-         "preconditions for fuse operation failed");
+  Location loc = scatterOp.getLoc();
+  // Check if reshape is expanding or collapsing.
+  auto expandingReshapeOp = dyn_cast<tensor::ExpandShapeOp>(*reshapeOp);
+  auto collapsingReshapeOp = dyn_cast<tensor::CollapseShapeOp>(*reshapeOp);
+  bool isExpanding = (expandingReshapeOp != nullptr);
+  RankedTensorType expandedType = isExpanding
+                                      ? expandingReshapeOp.getResultType()
+                                      : collapsingReshapeOp.getSrcType();
+  RankedTensorType collapsedType = isExpanding
+                                       ? expandingReshapeOp.getSrcType()
+                                       : collapsingReshapeOp.getResultType();
+  (void)loc;
+  (void)expandedType;
+  (void)collapsedType;
+
+  /// There are 2 cases we need to handle:
+  /// 1. The `update` & `indices` tensor is expanded along the batch dims.
+  /// 2. The `update` & `original` tensor is expanded.
+  bool isExpandingIndices = fusableOpOperand->get() == scatterOp.getIndices();
+
+  // In this case, we know that `scatterOp` must be the consumer of
+  // `expand_shape`.
+  if (isExpandingIndices) {
+    assert(isExpanding);
+    auto reassoc = expandingReshapeOp.getReassociationIndices();
+
+    // Expanding the dim corresponding to `index_depth` is not supported.
+    if (reassoc.back().size()) {
+      return std::nullopt;
+    }
+
+    //
+  }
+
   return {};
 }
 
@@ -596,8 +612,7 @@ struct FoldScatterWithProducerReshapeByExpansion final
           opOperand->get().getDefiningOp<tensor::CollapseShapeOp>();
       if (!reshapeOp)
         continue;
-      if (!isFusableWithReshapeByDimExpansion(scatterOp, opOperand) ||
-          (!controlFoldingReshapes(opOperand)))
+      if (!controlFoldingReshapes(opOperand))
         continue;
 
       std::optional<SmallVector<Value>> replacementValues =
