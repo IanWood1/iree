@@ -649,7 +649,6 @@ util.func @scatter_collapse_indices_partial(%arg0: tensor<?x2x16x4x128xf16>, %ar
 
 // -----
 
-// TODO
 util.func public @scatter_collapse(%arg0: tensor<?x2x16x4x128xf16>, %arg1: tensor<?x1xi32>, %arg2: tensor<?x2x16x4x128xf16>) -> tensor<?x2x16x4x4x32xf16> {
   %c0 = arith.constant 0 : index
   %0 = iree_linalg_ext.scatter dimension_map = [0] unique_indices(true) ins(%arg0, %arg1 : tensor<?x2x16x4x128xf16>, tensor<?x1xi32>) outs(%arg2 : tensor<?x2x16x4x128xf16>) {
@@ -664,5 +663,32 @@ util.func public @scatter_collapse(%arg0: tensor<?x2x16x4x128xf16>, %arg1: tenso
 //  CHECK-SAME:     %[[ARG0:[a-zA-Z0-9]+]]:
 //  CHECK-SAME:     %[[ARG1:[a-zA-Z0-9]+]]:
 //  CHECK-SAME:     %[[ARG2:[a-zA-Z0-9]+]]:
+//   CHECK-DAG:   %[[UPDATES:.+]] = tensor.expand_shape %[[ARG0]]
+//  CHECK-SAME:     tensor<?x2x16x4x128xf16> into tensor<?x2x16x4x4x32xf16>
+//   CHECK-DAG:   %[[ORIGINAL:.+]] = tensor.expand_shape %[[ARG2]]
+//  CHECK-SAME:     tensor<?x2x16x4x128xf16> into tensor<?x2x16x4x4x32xf16>
+//       CHECK:   %[[SCATTER:.+]] = iree_linalg_ext.scatter
+//  CHECK-SAME:       ins(%[[UPDATES]], %[[ARG1]]
+//  CHECK-SAME:       outs(%[[ORIGINAL]]
+//       CHECK:   util.return %[[SCATTER]]
+
+// -----
+
+util.func public @scatter_collapse_noop(%arg0: tensor<10xf16>, %arg1: tensor<10x1xi32>, %arg2: tensor<128xf16>) -> tensor<4x4x4x2xf16> {
+  %c0 = arith.constant 0 : index
+  %0 = iree_linalg_ext.scatter dimension_map = [0] unique_indices(true) ins(%arg0, %arg1 : tensor<10xf16>, tensor<10x1xi32>) outs(%arg2 : tensor<128xf16>) {
+  ^bb0(%arg3: f16, %arg4: f16):
+    iree_linalg_ext.yield %arg3 : f16
+  } -> tensor<128xf16>
+  %expanded = tensor.expand_shape %0 [[0, 1, 2, 3]] output_shape[4, 4, 4, 2] : tensor<128xf16> into tensor<4x4x4x2xf16>
+  util.return %expanded : tensor<4x4x4x2xf16>
+}
+// CHECK-LABEL: util.func public @scatter_collapse_noop
+//  CHECK-SAME:     %[[ARG0:[a-zA-Z0-9]+]]:
+//  CHECK-SAME:     %[[ARG1:[a-zA-Z0-9]+]]:
+//  CHECK-SAME:     %[[ARG2:[a-zA-Z0-9]+]]:
 //       CHECK:   %[[SCATTER:.+]] = iree_linalg_ext.scatter
 //  CHECK-SAME:       ins(%[[ARG0]], %[[ARG1]]
+//  CHECK-SAME:       outs(%[[ARG2]]
+//       CHECK:   %[[EXPANDED:.+]] = tensor.expand_shape %[[SCATTER]]
+//       CHECK:   util.return %[[EXPANDED]]
