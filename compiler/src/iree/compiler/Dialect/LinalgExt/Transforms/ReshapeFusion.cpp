@@ -395,11 +395,181 @@ static std::optional<SmallVector<Value>> fuseAttentionWithReshapeByExpansion(
   return resultVals;
 }
 
+namespace {
+class ScatterExpansionInfo {
+public:
+  // Helper class similar to `ExpansionInfo` but only for`LinalgExt::ScatterOp`
+  // due to its special semantics (i.e. not all dims map to the iteration space)
+  LogicalResult compute(LinalgExt::ScatterOp scatterOp,
+                        OpOperand *fusableOpOperand,
+                        ArrayRef<ReassociationIndices> reassociationIndices,
+                        ArrayRef<int64_t> expandedShape,
+                        ArrayRef<int64_t> collapsedShape,
+                        PatternRewriter &rewriter);
+
+  SmallVector<ReassociationIndices> updatesReassoc;
+  SmallVector<SmallVector<int64_t>> updatesShapeMap;
+  SmallVector<ReassociationIndices> indicesReassoc;
+  SmallVector<SmallVector<int64_t>> indicesShapeMap;
+  SmallVector<ReassociationIndices> originalReassoc;
+  SmallVector<SmallVector<int64_t>> originalShapeMap;
+};
+
+} // namespace
+
+// Overload of ExpansionInfo::compute for `LinalgExt::ScatterOp`.
+// This is required because there is no index map representation for scatter's
+// result, but we know that the innermost slice that gets inserted into is just
+// a memcpy based on the indices.
+LogicalResult ScatterExpansionInfo::compute(
+    LinalgExt::ScatterOp scatterOp, OpOperand *fusableOpOperand,
+    ArrayRef<ReassociationIndices> reassociationIndices,
+    ArrayRef<int64_t> expandedShape, ArrayRef<int64_t> collapsedShape,
+    PatternRewriter &rewriter) {
+  if (reassociationIndices.empty())
+    return failure();
+  assert(fusableOpOperand->getOwner() == scatterOp);
+
+  auto updatesShape = scatterOp.getUpdateType().getShape();
+  auto indicesShape = scatterOp.getIndicesType().getShape();
+  auto originalShape = scatterOp.getOriginalType().getShape();
+
+  auto handleUpdates = [&]() {
+    // Simple case: the shape of updates is the shape of the iteration space.
+    updatesReassoc.assign(reassociationIndices.begin(),
+                          reassociationIndices.end());
+    for (auto indices : updatesReassoc) {
+      updatesShapeMap.emplace_back(
+          expandedShape.slice(indices.front(), indices.size()));
+    }
+  };
+
+  auto handleIndices = [&]() {
+    // The first rank(batch_dims) in the shape of `indices` and the iteration
+    // space match.
+    int64_t count = 0;
+    for (auto &indices :
+         reassociationIndices.take_front(scatterOp.getBatchRank())) {
+      count += indices.size();
+      updatesShapeMap.emplace_back(
+          expandedShape.slice(indices.front(), indices.size()));
+      updatesReassoc.push_back(indices);
+    }
+    // Append the unchanged innermost iteration dims coming from `updates`
+    for (auto updateDim : scatterOp.getUpdateSliceShape()) {
+      updatesShapeMap.emplace_back(/*size=*/1, /*value=*/updateDim);
+      updatesReassoc.emplace_back(/*size=*/1, /*value=*/count++);
+    }
+  };
+
+  auto handleOriginal = [&]() {
+    // The last `getUpdateSliceRank` dims in `original` match the last dims in
+    // the iteration space. The others are indexed and cannot be expanded.
+    auto rankOfContiguousDims =
+        scatterOp.getOriginalType().getRank() - scatterOp.getIndexDepth();
+    int64_t count = 0;
+    for (auto length :
+         scatterOp.getUpdateType().getShape().drop_back(rankOfContiguousDims)) {
+      updatesReassoc.emplace_back(/*size=*/1, /*value=*/count++);
+      updatesShapeMap.emplace_back(/*size=*/1, /*value=*/length);
+    }
+    for (auto &indices : reassociationIndices.take_back(rankOfContiguousDims)) {
+      updatesReassoc.emplace_back(
+          llvm::to_vector(llvm::seq<int64_t>(count, count + indices.size())));
+      updatesShapeMap.emplace_back(
+          expandedShape.slice(indices.front(), indices.size()));
+      count += indices.size();
+    }
+  };
+
+  // Set `reassociation`
+  switch (fusableOpOperand->getOperandNumber()) {
+  case ScatterOp::kUpdatesOpNum:
+    handleUpdates();
+    break;
+  case ScatterOp::kIndicesOpNum:
+    handleIndices();
+    break;
+  case ScatterOp::kOriginalOpNum:
+    handleOriginal();
+    break;
+  default:
+    llvm_unreachable("invalid operand number");
+  }
+
+  if (llvm::all_of(updatesShapeMap,
+                   [&](auto vec) { return vec.size() == 1; })) {
+    return failure();
+  }
+
+  auto dump2DArray = [](auto arr) {
+    for (auto row : arr) {
+      llvm::interleaveComma(row, llvm::dbgs());
+      llvm::dbgs() << " || ";
+    }
+  };
+
+  llvm::dbgs() << "Updates shape map: \n";
+  dump2DArray(updatesShapeMap);
+  llvm::dbgs() << "\nUpdates Reassociation: \n";
+  dump2DArray(updatesReassoc);
+  llvm::dbgs() << "\n";
+
+  indicesReassoc.reserve(indicesShape.size());
+  indicesShapeMap.reserve(indicesShape.size());
+  auto expandedDimCount = 0;
+  for (auto idx : llvm::seq<int64_t>(0, indicesShape.size())) {
+    if (idx < scatterOp.getBatchRank()) {
+      indicesReassoc.push_back(updatesReassoc[idx]);
+      indicesShapeMap.emplace_back(
+          expandedShape.slice(expandedDimCount, indicesReassoc.back().size()));
+      expandedDimCount += updatesReassoc[idx].size();
+    } else {
+      indicesReassoc.emplace_back(/*size=*/1, /*value=*/expandedDimCount);
+      indicesShapeMap.emplace_back(/*size=*/1, /*value=*/indicesShape[idx]);
+      ++expandedDimCount;
+    }
+  }
+
+  llvm::dbgs() << "Indices shape map: \n";
+  dump2DArray(indicesShapeMap);
+  llvm::dbgs() << "\nIndices Reassociation: \n";
+  dump2DArray(indicesReassoc);
+  llvm::dbgs() << "\n";
+
+  originalReassoc.reserve(originalShape.size());
+  originalShapeMap.reserve(originalShape.size());
+  expandedDimCount = 0;
+  for (auto idx : llvm::seq<int64_t>(0, originalShape.size())) {
+    if (idx < scatterOp.getIndexDepth()) {
+      originalReassoc.emplace_back(/*size=*/1, /*value=*/expandedDimCount);
+      originalShapeMap.emplace_back(/*size=*/1, /*value=*/originalShape[idx]);
+      ++expandedDimCount;
+    } else {
+      auto mappedIndex = idx - originalShape.size() + updatesShape.size();
+      originalReassoc.emplace_back(llvm::to_vector(llvm::seq<int64_t>(
+          expandedDimCount,
+          expandedDimCount + updatesReassoc[mappedIndex].size())));
+      originalShapeMap.push_back(updatesShapeMap[mappedIndex]);
+      expandedDimCount += updatesReassoc[mappedIndex].size();
+    }
+  }
+
+  llvm::dbgs() << "Original shape map: \n";
+  dump2DArray(originalShapeMap);
+  llvm::dbgs() << "\nOriginal Reassociation: \n";
+  dump2DArray(originalReassoc);
+  llvm::dbgs() << "\n";
+
+  return success();
+}
+
 static std::optional<SmallVector<Value>>
 fuseScatterWithReshapeByExpansion(ScatterOp scatterOp, Operation *reshapeOp,
                                   OpOperand *fusableOpOperand,
                                   PatternRewriter &rewriter) {
   Location loc = scatterOp.getLoc();
+  (void)loc;
   // Check if reshape is expanding or collapsing.
   auto expandingReshapeOp = dyn_cast<tensor::ExpandShapeOp>(*reshapeOp);
   auto collapsingReshapeOp = dyn_cast<tensor::CollapseShapeOp>(*reshapeOp);
@@ -410,30 +580,79 @@ fuseScatterWithReshapeByExpansion(ScatterOp scatterOp, Operation *reshapeOp,
   RankedTensorType collapsedType = isExpanding
                                        ? expandingReshapeOp.getSrcType()
                                        : collapsingReshapeOp.getResultType();
-  (void)loc;
-  (void)expandedType;
-  (void)collapsedType;
-
-  /// There are 2 cases we need to handle:
-  /// 1. The `update` & `indices` tensor is expanded along the batch dims.
-  /// 2. The `update` & `original` tensor is expanded.
-  bool isExpandingIndices = fusableOpOperand->get() == scatterOp.getIndices();
-
-  // In this case, we know that `scatterOp` must be the consumer of
-  // `expand_shape`.
-  if (isExpandingIndices) {
-    assert(isExpanding);
-    auto reassoc = expandingReshapeOp.getReassociationIndices();
-
-    // Expanding the dim corresponding to `index_depth` is not supported.
-    if (reassoc.back().size()) {
-      return std::nullopt;
-    }
-
-    //
+  ScatterExpansionInfo info;
+  if (failed(info.compute(
+          scatterOp, fusableOpOperand,
+          isExpanding ? expandingReshapeOp.getReassociationIndices()
+                      : collapsingReshapeOp.getReassociationIndices(),
+          expandedType.getShape(), collapsedType.getShape(), rewriter))) {
+    return std::nullopt;
   }
 
-  return {};
+  // Returns `reassociation` with indices modified so that they are a contiguous
+  // grouping of indices.
+  auto fixupReassociation =
+      [](SmallVector<ReassociationIndices> &reassociation) {
+        auto count = 0;
+        for (auto &indices : reassociation) {
+          for (auto &index : indices) {
+            index = count++;
+          }
+        }
+        return reassociation;
+      };
+  (void)fixupReassociation;
+
+  auto getType = [&](SmallVector<SmallVector<int64_t>> &shapeMap,
+                     ShapedType type) {
+    SmallVector<int64_t> flattenedArray;
+    for (auto &shape : shapeMap) {
+      flattenedArray.append(shape.begin(), shape.end());
+    }
+    return RankedTensorType::get(flattenedArray, type.getElementType());
+  };
+
+  OpBuilder::InsertionGuard g(rewriter);
+  rewriter.setInsertionPoint(scatterOp);
+
+  auto isIdentityReassoc = [](SmallVector<ReassociationIndices> &indices) {
+    for (auto &index : indices) {
+      if (index.size() != 1)
+        return false;
+    }
+    return true;
+  };
+
+  Value newUpdates = rewriter.create<tensor::ExpandShapeOp>(
+      loc, getType(info.updatesShapeMap, scatterOp.getUpdateType()),
+      scatterOp.getUpdates(), info.updatesReassoc);
+  Value newIndices =
+      isIdentityReassoc(info.indicesReassoc)
+          ? scatterOp.getIndices()
+          : rewriter.create<tensor::ExpandShapeOp>(
+                loc, getType(info.indicesShapeMap, scatterOp.getIndicesType()),
+                scatterOp.getIndices(), info.indicesReassoc);
+  Value newOriginal =
+      isIdentityReassoc(info.originalReassoc)
+          ? scatterOp.getOriginal()
+          : rewriter.create<tensor::ExpandShapeOp>(
+                loc,
+                getType(info.originalShapeMap, scatterOp.getOriginalType()),
+                scatterOp.getOriginal(), info.originalReassoc);
+
+  auto newScatter = rewriter.create<ScatterOp>(
+      loc, newOriginal.getType(), ValueRange{newUpdates, newIndices},
+      ValueRange{newOriginal}, scatterOp.getDimensionMap(),
+      scatterOp.getUniqueIndices());
+  rewriter.inlineRegionBefore(scatterOp.getRegion(), newScatter.getRegion(),
+                              newScatter.getRegion().begin());
+
+  // Collapse back to originanl shape.
+  auto newCollapse = rewriter.create<tensor::CollapseShapeOp>(
+      loc, scatterOp.getOriginalType(), newScatter.getResult(0),
+      info.originalReassoc);
+
+  return {{newCollapse}};
 }
 
 //===----------------------------------------------------------------------===//
@@ -611,16 +830,16 @@ struct FoldScatterWithProducerReshapeByExpansion final
 
   LogicalResult matchAndRewrite(ScatterOp scatterOp,
                                 PatternRewriter &rewriter) const override {
-    for (OpOperand *opOperand : scatterOp.getDpsInputOperands()) {
+    for (OpOperand &opOperand : scatterOp->getOpOperands()) {
       tensor::CollapseShapeOp reshapeOp =
-          opOperand->get().getDefiningOp<tensor::CollapseShapeOp>();
+          opOperand.get().getDefiningOp<tensor::CollapseShapeOp>();
       if (!reshapeOp)
         continue;
-      if (!controlFoldingReshapes(opOperand))
+      if (!controlFoldingReshapes(&opOperand))
         continue;
 
       std::optional<SmallVector<Value>> replacementValues =
-          fuseScatterWithReshapeByExpansion(scatterOp, reshapeOp, opOperand,
+          fuseScatterWithReshapeByExpansion(scatterOp, reshapeOp, &opOperand,
                                             rewriter);
       if (!replacementValues)
         return failure();
