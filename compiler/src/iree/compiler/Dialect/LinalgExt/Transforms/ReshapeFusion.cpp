@@ -12,6 +12,8 @@
 #include "iree/compiler/Dialect/LinalgExt/IR/LinalgExtInterfaces.h"
 #include "iree/compiler/Dialect/LinalgExt/IR/LinalgExtOps.h"
 #include "iree/compiler/Dialect/LinalgExt/Transforms/Transforms.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVectorExtras.h"
 #include "mlir/Dialect/Arith/Utils/Utils.h"
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
@@ -417,10 +419,30 @@ public:
 
 } // namespace
 
-// Overload of ExpansionInfo::compute for `LinalgExt::ScatterOp`.
-// This is required because there is no index map representation for scatter's
-// result, but we know that the innermost slice that gets inserted into is just
-// a memcpy based on the indices.
+// Use the innermost indices in `reassoc` to construct a shape map out of
+// `shape`
+static SmallVector<SmallVector<int64_t>>
+computeShapeMapFromReassoc(ArrayRef<ReassociationIndices> reassoc,
+                           ArrayRef<int64_t> shape) {
+  SmallVector<SmallVector<int64_t>> shapeMap;
+  for (auto &indices : reassoc) {
+    shapeMap.emplace_back(shape.slice(indices.front(), indices.size()));
+  }
+  return shapeMap;
+}
+
+static SmallVector<ReassociationIndices>
+computeReassocFromShapeMap(ArrayRef<SmallVector<int64_t>> shapeMap) {
+  SmallVector<ReassociationIndices> reassoc;
+  int64_t dimCount = 0;
+  for (auto &shape : shapeMap) {
+    reassoc.emplace_back(
+        llvm::to_vector(llvm::seq<int64_t>(dimCount, dimCount + shape.size())));
+    dimCount += shape.size();
+  }
+  return reassoc;
+}
+
 LogicalResult ScatterExpansionInfo::compute(
     LinalgExt::ScatterOp scatterOp, OpOperand *fusableOpOperand,
     ArrayRef<ReassociationIndices> reassociationIndices,
@@ -433,108 +455,58 @@ LogicalResult ScatterExpansionInfo::compute(
   auto updatesShape = scatterOp.getUpdateType().getShape();
   auto indicesShape = scatterOp.getIndicesType().getShape();
   auto originalShape = scatterOp.getOriginalType().getShape();
+  auto rankOfContiguousSlice =
+      scatterOp.getOriginalType().getRank() - scatterOp.getIndexDepth();
 
-  auto handleUpdates = [&]() {
-    // Simple case: the shape of updates is the shape of the iteration space.
-    updatesReassoc.assign(reassociationIndices.begin(),
-                          reassociationIndices.end());
-    for (auto indices : updatesReassoc) {
-      updatesShapeMap.emplace_back(
-          expandedShape.slice(indices.front(), indices.size()));
-    }
+  // Helper lambda to convert a shape to an identity shape map.
+  auto shapeToIdentShapeMap = [](ArrayRef<int64_t> shape) {
+    return llvm::map_to_vector(
+        shape, [](int64_t dim) { return SmallVector<int64_t>{dim}; });
   };
 
-  auto handleIndices = [&]() {
-    // The first rank(batch_dims) in the shape of `indices` and the iteration
-    // space match.
-    int64_t count = 0;
-    for (auto &indices :
-         reassociationIndices.take_front(scatterOp.getBatchRank())) {
-      count += indices.size();
-      updatesShapeMap.emplace_back(
-          expandedShape.slice(indices.front(), indices.size()));
-      updatesReassoc.push_back(indices);
-    }
-    // Append the unchanged innermost iteration dims coming from `updates`
-    for (auto updateDim : scatterOp.getUpdateSliceShape()) {
-      updatesShapeMap.emplace_back(/*size=*/1, /*value=*/updateDim);
-      updatesReassoc.emplace_back(/*size=*/1, /*value=*/count++);
-    }
-  };
+  // Set `batchShapeMap` and `sliceShapeMap` based on the specific operand.
+  int64_t operandNum = fusableOpOperand->getOperandNumber();
 
-  auto handleOriginal = [&]() {
-    // The last `getUpdateSliceRank` dims in `original` match the last dims in
-    // the iteration space. The others are indexed and cannot be expanded.
-    auto rankOfContiguousDims =
-        scatterOp.getOriginalType().getRank() - scatterOp.getIndexDepth();
-    int64_t count = 0;
-    for (auto length :
-         scatterOp.getUpdateType().getShape().drop_back(rankOfContiguousDims)) {
-      updatesReassoc.emplace_back(/*size=*/1, /*value=*/count++);
-      updatesShapeMap.emplace_back(/*size=*/1, /*value=*/length);
-    }
-    for (auto &indices : reassociationIndices.take_back(rankOfContiguousDims)) {
-      updatesReassoc.emplace_back(
-          llvm::to_vector(llvm::seq<int64_t>(count, count + indices.size())));
-      updatesShapeMap.emplace_back(
-          expandedShape.slice(indices.front(), indices.size()));
-      count += indices.size();
-    }
-  };
+  // In the case of `original`, no chenge to the iteration space
+  SmallVector<SmallVector<int64_t>> batchShapeMap =
+      operandNum == ScatterOp::kOriginalOpNum
+          ? shapeToIdentShapeMap(
+                originalShape.take_front(scatterOp.getBatchRank()))
+          : computeShapeMapFromReassoc(
+                reassociationIndices.take_front(scatterOp.getBatchRank()),
+                expandedShape);
+  // In the case of `indices`, no chenge to the iteration space
+  SmallVector<SmallVector<int64_t>> sliceShapeMap =
+      operandNum == ScatterOp::kIndicesOpNum
+          ? shapeToIdentShapeMap(originalShape.take_back(rankOfContiguousSlice))
+          : computeShapeMapFromReassoc(
+                reassociationIndices.take_back(rankOfContiguousSlice),
+                expandedShape);
 
-  // Set `reassociation`
-  switch (fusableOpOperand->getOperandNumber()) {
-  case ScatterOp::kUpdatesOpNum:
-    handleUpdates();
-    break;
-  case ScatterOp::kIndicesOpNum:
-    handleIndices();
-    break;
-  case ScatterOp::kOriginalOpNum:
-    handleOriginal();
-    break;
-  default:
-    llvm_unreachable("invalid operand number");
-  }
-
-  if (llvm::all_of(updatesShapeMap,
-                   [&](auto vec) { return vec.size() == 1; })) {
+  // Early exit if iteration space is unchanged
+  if (llvm::all_of(batchShapeMap, [&](auto vec) { return vec.size() == 1; }) &&
+      llvm::all_of(sliceShapeMap, [&](auto vec) { return vec.size() == 1; })) {
     return failure();
   }
 
-  indicesReassoc.reserve(indicesShape.size());
-  indicesShapeMap.reserve(indicesShape.size());
-  auto expandedDimCount = 0;
-  for (auto idx : llvm::seq<int64_t>(0, indicesShape.size())) {
-    if (idx < scatterOp.getBatchRank()) {
-      indicesReassoc.push_back(updatesReassoc[idx]);
-      indicesShapeMap.emplace_back(
-          expandedShape.slice(expandedDimCount, indicesReassoc.back().size()));
-      expandedDimCount += updatesReassoc[idx].size();
-    } else {
-      indicesReassoc.emplace_back(/*size=*/1, /*value=*/expandedDimCount);
-      indicesShapeMap.emplace_back(/*size=*/1, /*value=*/indicesShape[idx]);
-      ++expandedDimCount;
-    }
-  }
+  updatesShapeMap = llvm::to_vector(llvm::concat<SmallVector<int64_t>>(
+      batchShapeMap,
+      shapeToIdentShapeMap(updatesShape.slice(scatterOp.getBatchRank(),
+                                              scatterOp.getUpdateSliceRank() -
+                                                  rankOfContiguousSlice)),
+      sliceShapeMap));
+  indicesShapeMap = llvm::to_vector(llvm::concat<SmallVector<int64_t>>(
+      batchShapeMap, shapeToIdentShapeMap(scatterOp.getIndexDepth())));
+  originalShapeMap = llvm::to_vector(llvm::concat<SmallVector<int64_t>>(
+      shapeToIdentShapeMap(originalShape.drop_back(rankOfContiguousSlice)),
+      sliceShapeMap));
 
-  originalReassoc.reserve(originalShape.size());
-  originalShapeMap.reserve(originalShape.size());
-  expandedDimCount = 0;
-  for (auto idx : llvm::seq<int64_t>(0, originalShape.size())) {
-    if (idx < scatterOp.getIndexDepth()) {
-      originalReassoc.emplace_back(/*size=*/1, /*value=*/expandedDimCount);
-      originalShapeMap.emplace_back(/*size=*/1, /*value=*/originalShape[idx]);
-      ++expandedDimCount;
-    } else {
-      auto mappedIndex = idx - originalShape.size() + updatesShape.size();
-      originalReassoc.emplace_back(llvm::to_vector(llvm::seq<int64_t>(
-          expandedDimCount,
-          expandedDimCount + updatesReassoc[mappedIndex].size())));
-      originalShapeMap.push_back(updatesShapeMap[mappedIndex]);
-      expandedDimCount += updatesReassoc[mappedIndex].size();
-    }
-  }
+  updatesReassoc = computeReassocFromShapeMap(updatesShapeMap);
+  indicesReassoc = computeReassocFromShapeMap(indicesShapeMap);
+  originalReassoc = computeReassocFromShapeMap(originalShapeMap);
+  assert(updatesReassoc.size() == updatesShape.size());
+  assert(indicesReassoc.size() == indicesShape.size());
+  assert(originalReassoc.size() == originalShape.size());
   return success();
 }
 
