@@ -80,6 +80,8 @@ using FunctionLikeNest =
 
 static void addCleanupPatterns(OpPassManager &passManager) {
   FunctionLikeNest(passManager)
+      .addPass(IREE::Flow::createCanonicalizerPass)
+      .addPass(mlir::createCSEPass)
       // Simplify integer arithmetic.
       .addPass(IREE::Util::createOptimizeIntArithmeticPass)
       // Standard MLIR cleanup.

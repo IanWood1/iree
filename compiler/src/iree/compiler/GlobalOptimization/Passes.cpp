@@ -96,6 +96,8 @@ void buildGlobalOptimizationPassPipeline(
   FunctionLikeNest(mainPassManager)
       .addPredicatedPass(transformOptions.options.stripAssertions,
                          IREE::Util::createStripDebugOpsPass)
+      .addPass(IREE::Flow::createCanonicalizerPass)
+      .addPass(mlir::createCSEPass)
       .addPass(IREE::Util::createOptimizeIntArithmeticPass)
       .addPass(createLinalgQuantizedConvToConvPass)
       .addPass(createLinalgQuantizedMatmulToMatmulPass)
@@ -198,6 +200,8 @@ void buildGlobalOptimizationPassPipeline(
   mainPassManager.addPass(IREE::Util::createIPOPass());
 
   FunctionLikeNest(mainPassManager)
+      .addPass(IREE::Flow::createCanonicalizerPass)
+      .addPass(mlir::createCSEPass)
       .addPass(IREE::Util::createOptimizeIntArithmeticPass)
       .addPass(IREE::Flow::createCanonicalizerPass)
       .addPass(createCSEPass);

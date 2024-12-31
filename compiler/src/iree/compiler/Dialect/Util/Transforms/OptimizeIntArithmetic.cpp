@@ -294,13 +294,6 @@ protected:
       s.eraseState(res);
   }
 
-  void notifyOperationModified(Operation *op) override {
-    s.eraseState(s.getProgramPointAfter(op));
-    for (Value res : op->getResults()) {
-      s.eraseState(res);
-    }
-  }
-
   DataFlowSolver &s;
 };
 
@@ -330,7 +323,7 @@ class OptimizeIntArithmeticPass
     }
 
     // General optimization patterns.
-    patterns.add<ElideTruncOfIndexCast>(ctx);
+    // patterns.add<ElideTruncOfIndexCast>(ctx);
 
     // Populate unsigned conversion patterns.
     patterns.add<ConvertUnsignedI64IndexCastProducerToIndex,

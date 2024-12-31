@@ -36,6 +36,7 @@ static void addCleanupPatterns(OpPassManager &passManager) {
       // Standard MLIR cleanup.
       .addPass(mlir::createCanonicalizerPass)
       .addPass(mlir::createCSEPass)
+      .addPass(mlir::createCanonicalizerPass)
 
       // Integer optimizations. These operate best on a canonical form both
       // for performance (post-simplifications cause less analysis) and
