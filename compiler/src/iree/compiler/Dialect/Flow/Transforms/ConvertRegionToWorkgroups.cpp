@@ -96,7 +96,11 @@ rewriteFlowDispatchRegionToFlowDispatchWorkgroups(
 
   // Compute arguments of the dispatch region.
   llvm::SetVector<Value> argumentsSet;
-  mlir::getUsedValuesDefinedAbove(region, argumentsSet);
+  llvm::SetVector<OpOperand *> argumentsOperandSet;
+  mlir::visitUsedValuesDefinedAbove(region, [&](OpOperand *operand) {
+    argumentsSet.insert(operand->get());
+    argumentsOperandSet.insert(operand);
+  });
   // Unranked tensors are not supported.
   assert(!llvm::any_of(argumentsSet, [](Value v) {
     return isa<UnrankedTensorType>(v.getType());
@@ -208,10 +212,8 @@ rewriteFlowDispatchRegionToFlowDispatchWorkgroups(
   Block *origEntry = &(*(std::next(newBody.begin())));
   rewriter.mergeBlocks(origEntry, newBodyEntry);
 
-  for (Value argument : arguments) {
-    argument.replaceUsesWithIf(bvm.lookup(argument), [&](OpOperand &operand) {
-      return workgroupsOp->isProperAncestor(operand.getOwner());
-    });
+  for (OpOperand *operand : argumentsOperandSet) {
+    operand->set(bvm.lookup(operand->get()));
   }
 
   // Update terminator.
