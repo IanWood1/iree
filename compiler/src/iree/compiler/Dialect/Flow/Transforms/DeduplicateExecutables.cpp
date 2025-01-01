@@ -4,10 +4,15 @@
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
+#include <mutex>
 #include "iree/compiler/Dialect/Flow/Transforms/Passes.h"
 #include "iree/compiler/Utils/EquivalenceUtils.h"
+#include "llvm/Support/Debug.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/Threading.h"
 #include "mlir/Pass/Pass.h"
+
+#define DEBUG_TYPE "iree-flow-deduplicate-executables"
 
 namespace mlir::iree_compiler::IREE::Flow {
 
@@ -87,48 +92,96 @@ static int deduplicateObjects(Operation *scopeOp,
   // 5 was randomly chosen to be small enough to not increase overhead much,
   // but giving at least enough of a sample that there is some bucketing. This
   // was not empirically determined.
+  LLVM_DEBUG({ llvm::dbgs() << "Start Pass!\n"; });
   llvm::MapVector<uint32_t, SmallVector<SymbolOpInterface>> objectMap;
-  for (auto objectOp : allObjectOps) {
-    int count = 0;
-    llvm::hash_code hash(1);
-    objectOp->walk([&](Operation *it) {
-      hash = llvm::hash_combine(hash, it->getName());
-      return (++count >= 5) ? WalkResult::interrupt() : WalkResult::advance();
-    });
-    objectMap[hash_value(hash)].push_back(cast<SymbolOpInterface>(objectOp));
-  }
+  std::mutex mutex;
+  constexpr int kMaxHashedOps = 5;
+  mlir::parallelForEach(
+      scopeOp->getContext(), allObjectOps, [&](auto objectOp) {
+        int count = 0;
+        llvm::hash_code hash(1);
+        objectOp->walk([&](Operation *op) {
+          hash = llvm::hash_combine(hash, op->getName());
+          hash = llvm::hash_combine(hash, op->getResultTypes());
+          return (++count >= kMaxHashedOps) ? WalkResult::interrupt()
+                                            : WalkResult::advance();
+        });
+        std::lock_guard<std::mutex> lock(mutex);
+        objectMap[hash_value(hash)].push_back(
+            cast<SymbolOpInterface>(objectOp));
+      });
+
+  LLVM_DEBUG({
+    llvm::dbgs() << "Finish Hash!\n";
+
+    // Print the number of entries in the object map as well as the
+    // average/min/max size.
+    int totalObjects = 0;
+    int minBucketSize = std::numeric_limits<int>::max();
+    int maxBucketSize = 0;
+    for (auto &entry : objectMap) {
+      totalObjects += entry.second.size();
+      minBucketSize = std::min(minBucketSize, (int)entry.second.size());
+      maxBucketSize = std::max(maxBucketSize, (int)entry.second.size());
+    }
+
+    llvm::dbgs() << "Total objects: " << totalObjects << "\n";
+    llvm::dbgs() << "Number of buckets: " << objectMap.size() << "\n";
+    llvm::dbgs() << "Average bucket size: " << (totalObjects / objectMap.size())
+                 << "\n";
+    llvm::dbgs() << "Min bucket size: " << minBucketSize << "\n";
+    llvm::dbgs() << "Max bucket size: " << maxBucketSize << "\n";
+  });
 
   // For each object find the first object which it is equivalent to and record
   // the replacement.
-  SmallVector<Operation *> deadOps;
+  SetVector<Operation *> deadOps;
   DenseMap<Attribute, SymbolRefAttr> symbolReplacements;
-  OperationEquivalenceCache equivalenceCache(scopeOp->getContext());
-  for (auto &[key, objectOps] : objectMap) {
+  mlir::parallelForEach(scopeOp->getContext(), objectMap, [&](auto object) {
+    auto &[key, objectOps] = object;
     (void)key;
+    OperationEquivalenceCache equivalenceCache(scopeOp->getContext());
     for (int i = objectOps.size() - 1; i >= 0; --i) {
       auto duplicateOp = objectOps[i];
+      {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (deadOps.contains(duplicateOp))
+          continue;
+      }
       for (int j = 0; j < i; ++j) {
         auto referenceOp = objectOps[j];
+        {
+          std::lock_guard<std::mutex> lock(mutex);
+          if (deadOps.contains(referenceOp))
+            continue;
+        }
 
         // Compare this potentially duplicate object to the reference one.
         if (!isStructurallyEquivalentTo(equivalenceCache, *duplicateOp,
                                         *referenceOp)) {
           continue;
         }
+        {
+          std::lock_guard<std::mutex> lock(mutex);
 
-        // Found an equivalent object! Record it and move on to the next.
-        deadOps.push_back(duplicateOp);
+          // Found an equivalent object! Record it and move on to the next.
+          deadOps.insert(duplicateOp);
 
-        // Record symbol reference replacements within nested objects.
-        gatherReplacements(SymbolRefAttr::get(duplicateOp),
-                           duplicateOp->getRegions(),
-                           SymbolRefAttr::get(referenceOp),
-                           referenceOp->getRegions(), symbolReplacements);
-
+          // Record symbol reference replacements within nested objects.
+          gatherReplacements(SymbolRefAttr::get(duplicateOp),
+                             duplicateOp->getRegions(),
+                             SymbolRefAttr::get(referenceOp),
+                             referenceOp->getRegions(), symbolReplacements);
+        }
         break;
       }
     }
-  }
+  });
+
+  LLVM_DEBUG({
+    llvm::dbgs() << "Found duplicates!\n";
+    llvm::dbgs() << "Number of dead ops: " << deadOps.size() << "\n";
+  });
 
   // Replace all symbol references within the scope.
   replaceSymbolRefs(scopeOp, symbolReplacements);
