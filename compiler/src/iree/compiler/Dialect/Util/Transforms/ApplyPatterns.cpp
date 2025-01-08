@@ -13,6 +13,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinDialect.h"
 #include "mlir/Pass/Pass.h"
+#include "mlir/Rewrite/FrozenRewritePatternSet.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 namespace mlir::iree_compiler::IREE::Util {
@@ -30,8 +31,7 @@ public:
         .insert<BuiltinDialect, func::FuncDialect, IREE::Util::UtilDialect>();
   }
 
-  void runOnOperation() override {
-    auto *context = &getContext();
+  LogicalResult initialize(MLIRContext *context) override {
     RewritePatternSet patterns(context);
 
     for (auto *dialect : context->getLoadedDialects()) {
@@ -41,8 +41,11 @@ public:
       op.getCanonicalizationPatterns(patterns, context);
     }
     IREE::Util::populateCommonPatterns(context, patterns);
+    this->frozenPatterns = std::move(patterns);
+    return success();
+  }
 
-    FrozenRewritePatternSet frozenPatterns(std::move(patterns));
+  void runOnOperation() override {
     if (failed(applyPatternsGreedily(getOperation(), frozenPatterns))) {
       getOperation()->emitError()
           << "failed to apply patterns, likely due to a bad pattern that "
@@ -50,6 +53,9 @@ public:
       return signalPassFailure();
     }
   }
+
+private:
+  FrozenRewritePatternSet frozenPatterns;
 };
 
 } // namespace

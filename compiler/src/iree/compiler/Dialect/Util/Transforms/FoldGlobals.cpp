@@ -356,17 +356,20 @@ static bool deduplicateConstantGlobals(GlobalTable &globalTable) {
 
 class FoldGlobalsPass : public impl::FoldGlobalsPassBase<FoldGlobalsPass> {
 public:
-  void runOnOperation() override {
-    auto *context = &getContext();
+  LogicalResult initialize(MLIRContext *context) override {
     RewritePatternSet patterns(context);
+
     for (auto *dialect : context->getLoadedDialects()) {
       dialect->getCanonicalizationPatterns(patterns);
     }
     for (auto op : context->getRegisteredOperations()) {
       op.getCanonicalizationPatterns(patterns, context);
     }
-    FrozenRewritePatternSet frozenPatterns(std::move(patterns));
+    this->frozenPatterns = std::move(patterns);
+    return success();
+  }
 
+  void runOnOperation() override {
     auto moduleOp = getOperation();
     GlobalTable globalTable(moduleOp);
     beforeFoldingGlobals = globalTable.size();
@@ -427,6 +430,9 @@ public:
     afterFoldingGlobals =
         count(moduleOp.getOps<IREE::Util::GlobalOpInterface>());
   }
+
+private:
+  FrozenRewritePatternSet frozenPatterns;
 };
 
 } // namespace

@@ -10,6 +10,7 @@
 
 #include "iree/compiler/Dialect/Stream/IR/StreamDialect.h"
 #include "iree/compiler/Dialect/Stream/IR/StreamOps.h"
+#include "iree/compiler/Dialect/Stream/IR/StreamTypes.h"
 #include "iree/compiler/Dialect/Util/Analysis/DFX/Element.h"
 #include "iree/compiler/Dialect/Util/Analysis/DFX/State.h"
 #include "iree/compiler/Dialect/Util/IR/UtilDialect.h"
@@ -800,15 +801,16 @@ sortAffinities(SmallVectorImpl<IREE::Stream::AffinityAttr> &affinities) {
   if (affinities.size() <= 1) {
     return;
   }
-  llvm::stable_sort(affinities, [](IREE::Stream::AffinityAttr lhs,
-                                   IREE::Stream::AffinityAttr rhs) {
-    std::string lhsStr;
-    llvm::raw_string_ostream lhsStream(lhsStr);
-    lhs.print(lhsStream);
-    std::string rhsStr;
-    llvm::raw_string_ostream rhsStream(rhsStr);
-    rhs.print(rhsStream);
-    return lhsStr < rhsStr;
+
+  llvm::SmallDenseMap<IREE::Stream::AffinityAttr, std::string, 8> affinityToStr;
+  for (auto affinity : affinities) {
+    llvm::raw_string_ostream stream(affinityToStr[affinity]);
+    affinity.print(stream);
+  }
+
+  llvm::stable_sort(affinities, [&](IREE::Stream::AffinityAttr lhs,
+                                    IREE::Stream::AffinityAttr rhs) {
+    return affinityToStr[lhs] < affinityToStr[rhs];
   });
 }
 
