@@ -254,7 +254,9 @@ struct ApplyFuncOp : public UsageRefinementPattern<IREE::Util::FuncOp> {
 
     // Results:
     SmallVector<Type> newOutputs;
-    auto anyReturnOp = *op.getOps<IREE::Util::ReturnOp>().begin();
+    auto &anyReturnOp = llvm::find_if(op.getBlocks(), [](Block &b) {
+                          return isa<IREE::Util::ReturnOp>(b.back());
+                        })->back();
     for (auto outputType : llvm::enumerate(op.getFunctionType().getResults())) {
       auto oldType =
           llvm::dyn_cast<IREE::Stream::ResourceType>(outputType.value());
