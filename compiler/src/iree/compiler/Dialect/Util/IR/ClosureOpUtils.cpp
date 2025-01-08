@@ -182,11 +182,9 @@ static void inlineClosureOperands(const ClosureOptimizationOptions &options,
     // argument that can be written; for example, the region might perform
     // work after loading a initial constant from the argument and then
     // write back.
-    if (!closureOp.getOperandAccess(opArg.index()).isReadOnly())
-      continue;
-
     if (closureOp.canClosureContainOp(sourceOp) &&
-        shouldInlineIntoClosure(options, outerValue)) {
+        shouldInlineIntoClosure(options, outerValue) &&
+        closureOp.getOperandAccess(opArg.index()).isReadOnly()) {
       // Clone the op (with regions).
       auto *clonedOp = rewriter.clone(*sourceOp);
 
