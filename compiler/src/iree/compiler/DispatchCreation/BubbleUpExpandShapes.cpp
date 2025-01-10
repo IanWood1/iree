@@ -35,6 +35,45 @@ namespace mlir::iree_compiler::DispatchCreation {
 
 namespace {
 
+/// Consider a simple example:
+///
+/// %0 = tensor.collapse_shape %arg0 ... AxB -> C
+/// %1 = tensor.expand_shape %0      ... C   -> DxE
+///
+/// The expand can be "bubbled" by first expanding `%arg0` into A0xA1xB and
+/// then collapsing back into A0x(A1*B). Let that be MxK, we repeat this process
+/// again but the other way to expand out MxK0xK1 and collapse back to
+/// (MxK0)*K1. AKA:
+///
+/// %0 = tensor.expand_shape %arg0   ... AxB       -> (A0xA1)xB
+/// %1 = tensor.collapse_shape %0    ... A0x(A1xB) -> MxK
+/// %2 = tensor.expand_shape %1      ... MxK       -> Mx(K0xK1)
+/// %3 = tensor.collapse_shape %2    ... (MxK0)xK1 -> DxE
+///
+///
+
+struct BubbleExpandThroughCollapse
+    : public OpRewritePattern<tensor::ExpandShapeOp> {
+  using OpRewritePattern<tensor::ExpandShapeOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(tensor::ExpandShapeOp expandOp,
+                                PatternRewriter &rewriter) const override {
+    auto collapseOp =
+        expandOp.getSrc().getDefiningOp<tensor::CollapseShapeOp>();
+    if (!collapseOp) {
+      return failure();
+    }
+    SmallVector<ReassociationIndices> expandReassoc =
+        expandOp.getReassociationIndices();
+    SmallVector<ReassociationIndices> collapseReassoc =
+        collapseOp.getReassociationIndices();
+    if (expandReassoc != collapseReassoc) {
+      return failure();
+    }
+    return success();
+  }
+};
+
 struct BubbleUpExpandShapesPass final
     : public impl::BubbleUpExpandShapesPassBase<BubbleUpExpandShapesPass> {
   void runOnOperation() override;
@@ -206,6 +245,7 @@ void BubbleUpExpandShapesPass::runOnOperation() {
   bubbleExpandShapePatterns.insert<BubbleExpandThroughExtract>(context);
   tensor::ExpandShapeOp::getCanonicalizationPatterns(bubbleExpandShapePatterns,
                                                      context);
+  bubbleExpandShapePatterns.insert<BubbleExpandThroughCollapse>(context);
 
   GreedyRewriteConfig rewriteConfig;
   rewriteConfig.maxIterations = GreedyRewriteConfig::kNoLimit;
