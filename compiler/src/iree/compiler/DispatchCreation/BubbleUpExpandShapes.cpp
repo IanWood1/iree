@@ -52,6 +52,77 @@ namespace {
 ///
 ///
 
+static bool checkReassoc(ArrayRef<ReassociationIndices> reassoc,
+                         ArrayRef<int64_t> shape) {
+  // TODO: btw shape access is contiguous
+  for (ReassociationIndicesRef innerReassoc : reassoc) {
+    bool seenDynamic = false;
+    for (int64_t dim : innerReassoc) {
+      if (ShapedType::isDynamic(shape[dim])) {
+        if (seenDynamic) {
+          return false;
+        }
+        seenDynamic = true;
+      }
+    }
+  }
+  return true;
+}
+
+static bool productOfStaticDims(ArrayRef<int64_t> shape) {
+  int64_t product = 1;
+  for (int64_t dim : shape) {
+    if (dim != ShapedType::kDynamic) {
+      product *= dim;
+    }
+  }
+  return product;
+}
+
+/// Computes the reassociation needed to expand `inShape` so that it is
+/// factorized enough to get collapsed back into `outShape`.
+///
+/// TODO: let this handle the failure cases.
+static SmallVector<ReassociationIndices>
+computeExpansion(ArrayRef<int64_t> inShape, ArrayRef<int64_t> outShape) {
+  assert(llvm::count(inShape, ShapedType::kDynamic) == 1 &&
+         "expected a single dynamic dim");
+  assert(llvm::count(outShape, ShapedType::kDynamic) == 1 &&
+         "expected a single dynamic dim");
+
+  int64_t inStaticSize = productOfStaticDims(inShape);
+  int64_t outStaticSize = productOfStaticDims(outShape);
+  (void)inStaticSize;
+  (void)outStaticSize;
+
+  int64_t outIdx = 0;
+  int64_t numerator = 1;
+  int64_t denominator = 1;
+
+  SmallVector<ReassociationIndices> subReassoc;
+  for (int64_t inDim : inShape) {
+    assert(numerator == 1 || denominator == 1);
+
+    ReassociationIndices currReassoc;
+    while (outIdx < outShape.size()) {
+      int64_t outDim = outShape[outIdx];
+      if (ShapedType::isDynamic(outDim) && ShapedType::isDynamic(inDim)) {
+        currReassoc.push_back(outIdx++);
+        continue;
+      }
+      if (ShapedType::isDynamic(outDim)) {
+        currReassoc.push_back(outIdx++);
+        continue;
+      }
+      numerator *= outDim;
+      currReassoc.push_back(outIdx++);
+    }
+    subReassoc.push_back(std::move(currReassoc));
+  }
+
+  return subReassoc;
+}
+
 struct BubbleExpandThroughCollapse
     : public OpRewritePattern<tensor::ExpandShapeOp> {
   using OpRewritePattern<tensor::ExpandShapeOp>::OpRewritePattern;
@@ -63,14 +134,46 @@ struct BubbleExpandThroughCollapse
     if (!collapseOp) {
       return failure();
     }
-    SmallVector<ReassociationIndices> expandReassoc =
-        expandOp.getReassociationIndices();
     SmallVector<ReassociationIndices> collapseReassoc =
         collapseOp.getReassociationIndices();
-    if (expandReassoc != collapseReassoc) {
+    SmallVector<ReassociationIndices> expandReassoc =
+        expandOp.getReassociationIndices();
+    ArrayRef<int64_t> inShape = collapseOp.getSrcType().getShape();
+    ArrayRef<int64_t> outShape = expandOp.getType().getShape();
+    SmallVector<OpFoldResult> outMixedShape =
+        getMixedValues(outShape, expandOp.getOutputShape(), rewriter);
+
+    if (inShape.size() != outShape.size()) {
+      llvm::dbgs() << "mismatch input/output rank\n";
       return failure();
     }
-    return success();
+
+    // Only able to handle a single dynamic dimension in the expanded/collapsed
+    // reassociation.
+    if (!checkReassoc(expandReassoc, outShape) ||
+        !checkReassoc(collapseReassoc, inShape)) {
+      llvm::dbgs() << "reassoc not invertible\n";
+      return failure();
+    }
+
+    for (ReassociationIndicesRef reassoc : expandReassoc) {
+
+      SmallVector<int64_t> inGroupShape = llvm::to_vector<6>(
+          llvm::map_range(reassoc, [&](int64_t dim) { return inShape[dim]; }));
+      SmallVector<int64_t> outGroupShape = llvm::to_vector<6>(
+          llvm::map_range(reassoc, [&](int64_t dim) { return outShape[dim]; }));
+      auto newReassoc = computeExpansion(inGroupShape, outGroupShape);
+      llvm::dbgs() << "reassoc: ";
+      for (auto &inner : newReassoc) {
+        llvm::dbgs() << " [";
+        llvm::interleaveComma(inner, llvm::dbgs());
+        llvm::dbgs() << "]";
+      }
+    }
+
+    llvm::dbgs() << "PASSED!\n";
+
+    return failure();
   }
 };
 

@@ -69,3 +69,55 @@ util.func public @attention_v_reshape_propagation(%arg0: index,
 //  CHECK-SAME:       ins(%[[ATTENTION]]
 //       CHECK:   %[[COLLAPSE:.+]] = tensor.collapse_shape %[[GENERIC]]
 //       CHECK:   return %[[COLLAPSE]]
+
+// -----
+
+// This can get folded to a single expand shape.
+util.func @ex(%arg0: tensor<4x?x8x128xf16>, %arg1: index) -> tensor<4x?x32x8x128xf16> {
+  %collapsed = tensor.collapse_shape %arg0 [[0, 1], [2, 3]] : tensor<4x?x8x128xf16> into tensor<?x1024xf16>
+  %expanded = tensor.expand_shape %collapsed [[0, 1, 2], [3, 4]] output_shape [4, %arg1, 32, 8, 128] : tensor<?x1024xf16> into tensor<4x?x32x8x128xf16>
+  util.return %expanded : tensor<4x?x32x8x128xf16>
+}
+
+// -----
+
+// This requires "bubbling".
+util.func @ex0(%arg0: tensor<4x?x8x128xf16>, %arg1: index) -> tensor<?x32x8x128xf16> {
+  %collapsed = tensor.collapse_shape %arg0 [[0, 1], [2, 3]] : tensor<4x?x8x128xf16> into tensor<?x1024xf16>
+  %expanded = tensor.expand_shape %collapsed [[0, 1], [2, 3]] output_shape [%arg1, 32, 8, 128] : tensor<?x1024xf16> into tensor<?x32x8x128xf16>
+  util.return %expanded : tensor<?x32x8x128xf16>
+}
+
+// -----
+
+util.func @ex1(%arg0: tensor<4x?x8x128xf16>, %arg1: index) -> tensor<?x32x8x128xf16> {
+  %collapsed = tensor.collapse_shape %arg0 [[0, 1], [2], [3]] : tensor<4x?x8x128xf16> into tensor<?x8x128xf16>
+  %expanded = tensor.expand_shape %collapsed [[0, 1], [2], [3]] output_shape [%arg1, 32, 8, 128] : tensor<?x8x128xf16> into tensor<?x32x8x128xf16>
+  util.return %expanded : tensor<?x32x8x128xf16>
+}
+
+// -----
+
+util.func @ex2(%arg0: tensor<?x?x8x128xf16>, %arg1: index, %arg2: index) -> tensor<?x32x8x128xf16> {
+  %collapsed = tensor.collapse_shape %arg0 [[0, 1], [2], [3]] : tensor<?x?x8x128xf16> into tensor<?x8x128xf16>
+  %expanded = tensor.expand_shape %collapsed [[0, 1], [2], [3]] output_shape [%arg1, %arg2, 8, 128] : tensor<?x8x128xf16> into tensor<?x32x8x128xf16>
+  util.return %expanded : tensor<?x32x8x128xf16>
+}
+
+// -----
+
+// This requires "bubbling".
+util.func @ex3(%arg0: tensor<4x?x8x128xf16>, %arg1: index) -> tensor<?x32x8x128xf16> {
+  %collapsed = tensor.collapse_shape %arg0 [[0, 1, 2], [3]] : tensor<4x?x8x128xf16> into tensor<?x128xf16>
+  %expanded = tensor.expand_shape %collapsed [[0, 1, 2], [3]] output_shape [%arg1, 32, 8, 128] : tensor<?x128xf16> into tensor<?x32x8x128xf16>
+  util.return %expanded : tensor<?x32x8x128xf16>
+}
+
+// -----
+
+// This requires "bubbling".
+util.func @ex4(%arg0: tensor<4x?x8x128xf16>, %arg1: index) -> tensor<?x2x8x128xf16> {
+  %collapsed = tensor.collapse_shape %arg0 [[0, 1, 2], [3]] : tensor<4x?x8x128xf16> into tensor<?x128xf16>
+  %expanded = tensor.expand_shape %collapsed [[0, 1, 2], [3]] output_shape [%arg1, 2, 8, 128] : tensor<?x128xf16> into tensor<?x2x8x128xf16>
+  util.return %expanded : tensor<?x2x8x128xf16>
+}
