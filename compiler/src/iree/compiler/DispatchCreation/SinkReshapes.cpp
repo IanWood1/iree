@@ -79,7 +79,7 @@ static bool shouldSinkExpandShapeOp(OpOperand *opOperand) {
 
   // Do not sink reshapes across dequantize operations since they are
   // cloned into their consumers.
-  if (IREE::LinalgExt::isBitExtendOp(consumer)) {
+  if (IREE::Flow::isClonableIntoDispatchOp(consumer)) {
     return false;
   }
 

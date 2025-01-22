@@ -8,6 +8,7 @@
 #include "iree/compiler/Dialect/LinalgExt/Utils/IndexingUtils.h"
 #include "iree/compiler/Dialect/LinalgExt/Utils/Utils.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Affine/Utils.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
@@ -93,6 +94,33 @@ SmallVector<Range> ScatterOp::getIterationDomain(OpBuilder &builder) {
   return ranges;
 }
 
+static Value dropUnitDims(Location loc, Value val, OpBuilder &builder) {
+  ShapedType type = cast<ShapedType>(val.getType());
+  SmallVector<int64_t> droppedShape = llvm::filter_to_vector(
+      type.getShape(), [](int64_t dim) { return dim != 1; });
+  if (droppedShape.empty()) {
+    droppedShape.push_back(1);
+  }
+
+  return TypeSwitch<Type, Value>(val.getType())
+      .Case<RankedTensorType>([&](RankedTensorType t) {
+        auto extract = tensor::ExtractSliceOp::rankReduceIfNeeded(
+            builder, loc, val, droppedShape);
+        assert(succeeded(extract));
+        return extract.value();
+      })
+      .Case<MemRefType>([&](MemRefType type) {
+        auto extract = memref::SubViewOp::rankReduceIfNeeded(builder, loc, val,
+                                                             droppedShape);
+        assert(succeeded(extract));
+        return extract.value();
+      })
+      .Default([&](Type t) {
+        llvm_unreachable("invalid type");
+        return Value{};
+      });
+}
+
 FailureOr<TilingResult>
 ScatterOp::getTiledImplementation(OpBuilder &builder,
                                   ArrayRef<OpFoldResult> offsets,
@@ -111,7 +139,6 @@ ScatterOp::getTiledImplementation(OpBuilder &builder,
   if (!updateSlice) {
     return emitOpError("failed to get updates slice");
   }
-  Value tiledUpdate = updateSlice->getResult(0);
   slices.push_back(updateSlice);
 
   // Slice of indices.
@@ -129,7 +156,6 @@ ScatterOp::getTiledImplementation(OpBuilder &builder,
   if (!indicesSlice) {
     return emitOpError("failed to get indices slices");
   }
-  Value tiledIndices = indicesSlice->getResult(0);
   slices.push_back(indicesSlice);
 
   // Slice of the original.
@@ -146,16 +172,21 @@ ScatterOp::getTiledImplementation(OpBuilder &builder,
   if (!originalSlice) {
     return emitOpError("failed to get original tensor slice");
   }
-  Value tiledOriginal = originalSlice->getResult(0);
   slices.push_back(originalSlice);
 
+  for (auto &slice : slices) {
+    slice = dropUnitDims(slice->getLoc(), slice->getResult(0), builder)
+                .getDefiningOp();
+  }
   SmallVector<Type> resultTypes;
   if (getNumResults()) {
-    resultTypes.push_back(tiledOriginal.getType());
+    resultTypes.push_back(slices.back()->getResult(0).getType());
   }
+
   Operation *tiledScatterOp =
       mlir::clone(builder, getOperation(), resultTypes,
-                  ValueRange{tiledUpdate, tiledIndices, tiledOriginal});
+                  ValueRange{slices[0]->getResult(0), slices[1]->getResult(0),
+                             slices[2]->getResult(0)});
   return TilingResult{{tiledScatterOp},
                       SmallVector<Value>(tiledScatterOp->getResults()),
                       slices};
