@@ -133,6 +133,12 @@ LogicalResult moveOperandDefs(RewriterBase &rewriter,
     }
   }
 
+  for (auto *user : insertionPoint->getUsers()) {
+    if (slice.contains(user)) {
+      return failure();
+    }
+  }
+
   mlir::topologicalSort(slice);
   for (auto op : slice) {
     rewriter.moveOpBefore(op, insertionPoint);
