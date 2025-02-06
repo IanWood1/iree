@@ -158,6 +158,10 @@ void addDispatchRegionCreationPreprocessingPasses(OpPassManager &passManager) {
       .addPass(IREE::Flow::createCanonicalizerPass)
       .addPass(mlir::createCSEPass)
 
+      .addPass(DispatchCreation::createFuseMultiUseElementwiseProducerPass)
+      .addPass(IREE::Flow::createCanonicalizerPass)
+      .addPass(mlir::createCSEPass)
+
       // 4. After elementwise operation fusion sink reshapes that block
       //    producer-consumer fusion.
       .addPass(DispatchCreation::createSinkReshapesPass)

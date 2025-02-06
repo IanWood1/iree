@@ -201,21 +201,7 @@ static bool isEligibleForCollapse(Operation *op) {
     return false;
   }
 
-  // TODO(#17948) GPU codegen fails when we collapse the dimensions of softmax.
-  auto isPossiblySoftmax = [&](OpOperand *operand) -> bool {
-    auto genericOperand = operand->get().getDefiningOp<linalg::GenericOp>();
-    if (!genericOperand) {
-      return false;
-    }
-
-    if (genericOperand.getNumReductionLoops() == 0) {
-      return false;
-    }
-
-    auto map = genericOp.getMatchingIndexingMap(operand);
-    return !map.isPermutation() && map.isProjectedPermutation();
-  };
-  if (llvm::any_of(genericOp.getDpsInputOperands(), isPossiblySoftmax)) {
+  if (genericOp.getNumReductionLoops() > 1) {
     return false;
   }
 
