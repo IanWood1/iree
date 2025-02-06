@@ -204,7 +204,9 @@ static FailureOr<unsigned> fuseMultiUseProducers(Operation *funcOp,
 
           // 8. Skip bit-truncate-like `producer` ops as we would rather fuse
           //    these operations with their producers.
-          if (IREE::LinalgExt::isBitTruncateOp(producer)) {
+          if (IREE::LinalgExt::isBitTruncateOp(producer) &&
+              !(genericOp.getNumLoops() == genericOp.getNumParallelLoops() &&
+                genericOp.getNumDpsInputs() == 1)) {
             return;
           }
 

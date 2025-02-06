@@ -58,6 +58,15 @@ bool areFusableAsElementwiseOps(MLIRContext *context, OpOperand *fusedOperand,
     return false;
   }
 
+  auto linalgConsumerOp = dyn_cast<linalg::LinalgOp>(consumerOp);
+  if (!linalgConsumerOp) {
+    return false;
+  }
+
+  if (linalgConsumerOp.isSingleInputOutput()) {
+    return true;
+  }
+
   // Do no fuse bitextend-like operations with producers. Such ops are cloned
   // into all their use dispatches. So fusing producer with consumer here would
   // then result in producer also getting cloned into many dispatches which is
@@ -66,11 +75,6 @@ bool areFusableAsElementwiseOps(MLIRContext *context, OpOperand *fusedOperand,
   // fusion is fine since cloning wont result in redundant computation of the
   // producer. (Also note that the producer is always an elementwise operation).
   if (IREE::LinalgExt::isBitExtendOp(consumerOp) && !consumerOp->hasOneUse()) {
-    return false;
-  }
-
-  auto linalgConsumerOp = dyn_cast<linalg::LinalgOp>(consumerOp);
-  if (!linalgConsumerOp) {
     return false;
   }
 

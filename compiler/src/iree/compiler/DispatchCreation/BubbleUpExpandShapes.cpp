@@ -139,8 +139,11 @@ void BubbleUpExpandShapesPass::runOnOperation() {
         // If producer generic op is elementwise op, bubble up the expand shape
         // past this operation.
         if (auto producerGenericOp = dyn_cast<linalg::GenericOp>(producer)) {
-          return llvm::all_of(producerGenericOp.getIteratorTypesArray(),
-                              linalg::isParallelIterator);
+          if (!llvm::all_of(producerGenericOp.getIteratorTypesArray(),
+                            linalg::isParallelIterator)) {
+            return !producerGenericOp.hasDynamicShape();
+          }
+          return true;
         }
 
         // Do not bubble up expand shapes across named ops for now.
@@ -152,12 +155,13 @@ void BubbleUpExpandShapesPass::runOnOperation() {
         // iterator types.
         // TODO: This condition should be removed.
         if (auto consumerLinalgOp = dyn_cast<linalg::LinalgOp>(consumer)) {
-          return isa<linalg::GenericOp>(consumerLinalgOp) &&
-                 llvm::all_of(consumerLinalgOp.getIteratorTypesArray(),
-                              linalg::isParallelIterator) &&
-                 !llvm::any_of(consumerLinalgOp->getUsers(), [](Operation *op) {
-                   return llvm::isa<tensor::InsertSliceOp>(op);
-                 });
+          if (!llvm::all_of(consumerLinalgOp.getIteratorTypesArray(),
+                            linalg::isParallelIterator)) {
+            return !consumerLinalgOp.hasDynamicShape();
+          }
+          return !llvm::any_of(consumerLinalgOp->getUsers(), [](Operation *op) {
+            return llvm::isa<tensor::InsertSliceOp>(op);
+          });
         }
         // Fuse in all other cases.
         return true;
