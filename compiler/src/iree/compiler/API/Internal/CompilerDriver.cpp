@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 // Platform detect for memfd_create and mmap support.
+#include "llvm/Passes/OptimizationLevel.h"
 #if __linux__
 // On Linux, memfd_create is available for GLIBC >= 2.27.
 // Notably, this excludes RHEL7 (and correspondingingly manylinux2014).
@@ -409,6 +410,7 @@ Session::Session(GlobalInit &globalInit)
 
   // Bootstrap session options from the cl environment, if enabled.
   if (globalInit.usesCommandLine) {
+    auto binder = OptionsBinder::global();
     debugConfig = mlir::tracing::DebugConfig::createFromCLOptions();
     pluginManagerOptions = *globalInit.clPluginManagerOptions;
     bindingOptions = *globalInit.clBindingOptions;

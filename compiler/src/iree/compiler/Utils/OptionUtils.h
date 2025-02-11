@@ -9,7 +9,10 @@
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Passes/OptimizationLevel.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/raw_ostream.h"
 #include "mlir/Support/LogicalResult.h"
 
@@ -44,12 +47,14 @@ public:
 
   template <typename T, typename V, typename... Mods>
   void opt(llvm::StringRef name, V &value, Mods... Ms) {
+    auto changedCallback = makeChangedCallback(&value);
     if (!scope) {
       // Bind global options.
       auto opt = std::make_unique<llvm::cl::opt<T, /*ExternalStorage=*/true>>(
           name, llvm::cl::location(value), llvm::cl::init(value),
           std::forward<Mods>(Ms)...);
-      addGlobalOption(std::move(opt));
+      getOptionsStorage()[name] =
+          OptionInfo{std::move(opt), nullptr, changedCallback};
     } else {
       // Bind local options.
       auto option =
@@ -58,9 +63,25 @@ public:
               llvm::cl::init(value), std::forward<Mods>(Ms)...);
       auto printCallback =
           makePrintCallback(option->ArgStr, option->getParser(), &value);
-      auto changedCallback = makeChangedCallback(&value);
-      localOptions.push_back(
-          LocalOptionInfo{std::move(option), printCallback, changedCallback});
+      getOptionsStorage()[name] =
+          OptionInfo{std::move(option), printCallback, changedCallback};
+    }
+  }
+
+  template <typename T>
+  void overrideDefault(llvm::StringRef name, T &val, const T &update) {
+    auto infoIt = globalOptions->find(name);
+    if (infoIt == globalOptions->end()) {
+      llvm::errs() << "Option not found: " << name << "\n";
+      return;
+    }
+
+    auto isChanged = infoIt->getSecond().isChanged;
+    if (!isChanged()) {
+      llvm::dbgs() << name << " overriding default\n";
+      val = update;
+    } else {
+      llvm::dbgs() << name << " no op\n";
     }
   }
 
@@ -74,7 +95,7 @@ public:
       // and use it to update.
       list->setCallback(
           [&value](const T &newElement) { value.push_back(newElement); });
-      addGlobalOption(std::move(list));
+      getOptionsStorage()[name] = OptionInfo{std::move(list), nullptr, nullptr};
     } else {
       // Bind local options.
       auto list = std::make_unique<llvm::cl::list<T>>(
@@ -87,8 +108,8 @@ public:
       list->setCallback(
           [&value](const T &newElement) { value.push_back(newElement); });
 
-      localOptions.push_back(
-          LocalOptionInfo{std::move(list), printCallback, changedCallback});
+      getOptionsStorage()[name] =
+          OptionInfo{std::move(list), printCallback, changedCallback};
     }
   }
 
@@ -104,18 +125,18 @@ public:
   llvm::SmallVector<std::string> printArguments(bool nonDefaultOnly = false);
 
 private:
-  struct LocalOptionInfo {
+  struct OptionInfo {
     using ChangedCallback = std::function<bool()>;
     using PrintCallback = std::function<void(llvm::raw_ostream &)>;
     std::unique_ptr<llvm::cl::Option> option;
     PrintCallback print;
     ChangedCallback isChanged;
   };
+  using OptionsStorage = llvm::DenseMap<llvm::StringRef, OptionInfo>;
 
   OptionsBinder() = default;
   OptionsBinder(std::unique_ptr<llvm::cl::SubCommand> scope)
       : scope(std::move(scope)) {}
-  void addGlobalOption(std::unique_ptr<llvm::cl::Option> option);
 
   // LLVM makes a half-hearted (i.e. "best effort" == "no effort") attempt to
   // handle non-enumerated generic value based options, but the generic
@@ -127,7 +148,7 @@ private:
   static auto makePrintCallback(llvm::StringRef optionName, ParserTy &parser,
                                 V *value)
       -> decltype(static_cast<llvm::cl::generic_parser_base &>(parser),
-                  static_cast<int>(*value), LocalOptionInfo::PrintCallback()) {
+                  static_cast<int>(*value), OptionInfo::PrintCallback()) {
     return [optionName, &parser, value](llvm::raw_ostream &os) {
       llvm::StringRef valueName("<unknown>");
       for (unsigned i = 0; i < parser.getNumOptions(); ++i) {
@@ -148,7 +169,7 @@ private:
   static auto makePrintCallback(llvm::StringRef optionName, ParserTy &parser,
                                 V *value)
       -> decltype(static_cast<llvm::cl::basic_parser<V> &>(parser),
-                  LocalOptionInfo::PrintCallback()) {
+                  OptionInfo::PrintCallback()) {
     return [optionName, value](llvm::raw_ostream &os) {
       os << "--" << optionName << "=" << *value;
     };
@@ -159,7 +180,7 @@ private:
   static auto makePrintCallback(llvm::StringRef optionName, ParserTy &parser,
                                 bool *value)
       -> decltype(static_cast<llvm::cl::basic_parser<bool> &>(parser),
-                  LocalOptionInfo::PrintCallback()) {
+                  OptionInfo::PrintCallback()) {
     return [optionName, value](llvm::raw_ostream &os) {
       os << "--" << optionName << "=";
       if (*value) {
@@ -172,7 +193,7 @@ private:
 
   // Scalar changed specialization.
   template <typename V>
-  static LocalOptionInfo::ChangedCallback makeChangedCallback(V *currentValue) {
+  static OptionInfo::ChangedCallback makeChangedCallback(V *currentValue) {
     // Capture the current value as the initial value.
     V initialValue = *currentValue;
     return [currentValue, initialValue]() -> bool {
@@ -182,8 +203,7 @@ private:
 
   // List changed specialization.
   template <typename V>
-  static LocalOptionInfo::ChangedCallback
-  makeListChangedCallback(V *currentValue) {
+  static OptionInfo::ChangedCallback makeListChangedCallback(V *currentValue) {
     return [currentValue]() -> bool { return !currentValue->empty(); };
   }
 
@@ -194,7 +214,7 @@ private:
   static auto makeListPrintCallback(llvm::StringRef optionName,
                                     ParserTy &parser, ListTy *values)
       -> decltype(static_cast<llvm::cl::basic_parser<V> &>(parser),
-                  LocalOptionInfo::PrintCallback()) {
+                  OptionInfo::PrintCallback()) {
     return [optionName, values](llvm::raw_ostream &os) {
       os << "--" << optionName << "=";
       for (auto it : llvm::enumerate(*values)) {
@@ -205,8 +225,17 @@ private:
     };
   }
 
+  OptionsStorage &getOptionsStorage() {
+    if (!scope) {
+      return *globalOptions;
+    } else {
+      return localOptions;
+    }
+  }
+
   std::unique_ptr<llvm::cl::SubCommand> scope;
-  llvm::SmallVector<LocalOptionInfo> localOptions;
+  OptionsStorage localOptions;
+  static llvm::ManagedStatic<OptionsStorage> globalOptions;
 };
 
 // Generic class that is used for allocating an Options class that initializes
@@ -235,6 +264,13 @@ public:
   }
 
 } // namespace mlir::iree_compiler
+
+namespace llvm {
+inline raw_ostream &operator<<(raw_ostream &os,
+                               const llvm::OptimizationLevel &opt) {
+  return os << opt.getSpeedupLevel();
+}
+} // namespace llvm
 
 namespace llvm::cl {
 
@@ -271,6 +307,18 @@ public:
              PowerOf2ByteSize &Val);
   StringRef getValueName() const override { return "power of two byte size"; }
   void printOptionDiff(const Option &O, PowerOf2ByteSize V,
+                       const OptVal &Default, size_t GlobalWidth) const;
+  void anchor() override;
+};
+
+template <>
+class parser<OptimizationLevel> : public basic_parser<OptimizationLevel> {
+public:
+  parser(Option &O) : basic_parser(O) {}
+  bool parse(Option &O, StringRef ArgName, StringRef Arg,
+             OptimizationLevel &Val);
+  StringRef getValueName() const override { return "optimization level"; }
+  void printOptionDiff(const Option &O, OptimizationLevel V,
                        const OptVal &Default, size_t GlobalWidth) const;
   void anchor() override;
 };

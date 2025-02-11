@@ -5,6 +5,7 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #include "iree/compiler/Pipelines/Options.h"
+#include "llvm/Passes/OptimizationLevel.h"
 
 IREE_DEFINE_COMPILER_OPTION_FLAGS(mlir::iree_compiler::BindingOptions);
 IREE_DEFINE_COMPILER_OPTION_FLAGS(mlir::iree_compiler::InputDialectOptions);
@@ -12,8 +13,20 @@ IREE_DEFINE_COMPILER_OPTION_FLAGS(
     mlir::iree_compiler::GlobalOptimizationOptions);
 IREE_DEFINE_COMPILER_OPTION_FLAGS(mlir::iree_compiler::SchedulingOptions);
 IREE_DEFINE_COMPILER_OPTION_FLAGS(mlir::iree_compiler::PreprocessingOptions);
+IREE_DEFINE_COMPILER_OPTION_FLAGS(mlir::iree_compiler::GlobalPipelineOptions);
 
 namespace mlir::iree_compiler {
+
+void GlobalPipelineOptions::bindOptions(OptionsBinder &binder) {
+  static llvm::cl::OptionCategory category(
+      "IREE global pipeline options controlling the entire compilation flow.");
+
+  binder.opt<llvm::OptimizationLevel>(
+      "iree-opt-level", optLevel,
+      llvm::cl::desc("Global optimization level to apply to the entire "
+                     "compilation flow."),
+      llvm::cl::cat(category));
+}
 
 void BindingOptions::bindOptions(OptionsBinder &binder) {
   static llvm::cl::OptionCategory category(
@@ -118,6 +131,12 @@ void PreprocessingOptions::bindOptions(OptionsBinder &binder) {
           "File name of a transform dialect spec to use for preprocessing."),
       llvm::cl::cat(category));
 }
+
+void GlobalOptimizationOptions::applyOptimization(
+    OptionsBinder &binder, GlobalPipelineOptions &globalLevel) {
+  binder.overrideDefault("iree-global-optimization-opt-level", optLevel,
+                         globalLevel.optLevel);
+};
 
 void GlobalOptimizationOptions::bindOptions(OptionsBinder &binder) {
   static llvm::cl::OptionCategory category(
