@@ -235,6 +235,7 @@ struct GlobalInit {
   // Our session options can optionally be bound to the global command-line
   // environment. If that is not the case, then these will be nullptr, and
   // they should be default initialized at the session level.
+  GlobalPipelineOptions *clGlobalPipelineOptions = nullptr;
   PluginManagerOptions *clPluginManagerOptions = nullptr;
   BindingOptions *clBindingOptions = nullptr;
   InputDialectOptions *clInputOptions = nullptr;
@@ -388,6 +389,7 @@ struct Session {
   bool pluginsActivated = false;
   LogicalResult pluginActivationStatus{failure()};
 
+  GlobalPipelineOptions pipelineOptions;
   BindingOptions bindingOptions;
   InputDialectOptions inputOptions;
   PreprocessingOptions preprocessingOptions;
@@ -412,6 +414,7 @@ Session::Session(GlobalInit &globalInit)
   if (globalInit.usesCommandLine) {
     auto binder = OptionsBinder::global();
     debugConfig = mlir::tracing::DebugConfig::createFromCLOptions();
+    pipelineOptions = *globalInit.clGlobalPipelineOptions;
     pluginManagerOptions = *globalInit.clPluginManagerOptions;
     bindingOptions = *globalInit.clBindingOptions;
     inputOptions = *globalInit.clInputOptions;
@@ -432,6 +435,7 @@ Session::Session(GlobalInit &globalInit)
 
   // Register each options struct with the binder so we can manipulate
   // mnemonically via the API.
+  pipelineOptions.bindOptions(binder);
   bindingOptions.bindOptions(binder);
   preprocessingOptions.bindOptions(binder);
   inputOptions.bindOptions(binder);
