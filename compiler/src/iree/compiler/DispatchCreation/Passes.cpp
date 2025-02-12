@@ -258,7 +258,8 @@ static void addDispatchRegionCreationPasses(OpPassManager &passManager) {
   }
   FunctionLikeNest(passManager)
       // Collapse dimensions of linalg Ops.
-      .addPass(DispatchCreation::createCollapseDimensionsPass);
+      .addPass(DispatchCreation::createCollapseDimensionsPass)
+      .addPass(IREE::Util::createOptimizeIntArithmeticPass);
 }
 
 // Apply preprocessing and form dispatch regions

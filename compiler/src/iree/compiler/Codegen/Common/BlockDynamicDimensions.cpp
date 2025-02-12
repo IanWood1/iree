@@ -265,11 +265,8 @@ static LogicalResult
 blockDynamicDimensions(RewriterBase &rewriter,
                        const TensorDynamicDimAnalysis &dynamicDimAnalysis,
                        linalg::LinalgOp linalgOp) {
-  if (linalg::isaContractionOpInterface(linalgOp)) {
-    return blockDynamicDimensionsOfAllTensorOperandsAndResults(
-        rewriter, dynamicDimAnalysis, linalgOp);
-  }
-  return success();
+  return blockDynamicDimensionsOfAllTensorOperandsAndResults(
+      rewriter, dynamicDimAnalysis, linalgOp);
 }
 
 /// Block dynamic dimensions in operands of `AttentionOp`.
