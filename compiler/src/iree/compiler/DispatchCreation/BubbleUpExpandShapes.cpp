@@ -139,7 +139,7 @@ void BubbleUpExpandShapesPass::runOnOperation() {
         // If producer generic op is elementwise op, bubble up the expand shape
         // past this operation.
         if (auto producerGenericOp = dyn_cast<linalg::GenericOp>(producer)) {
-          return true;
+          return producerGenericOp->hasOneUse();
         }
 
         // Do not bubble up expand shapes across named ops for now.
