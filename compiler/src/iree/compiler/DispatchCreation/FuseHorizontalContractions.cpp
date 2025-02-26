@@ -88,6 +88,11 @@ static bool checkContractionOpEquivalence(Operation *aOp, Operation *bOp) {
     return false;
   }
 
+  // DO NOT SUBMIT: hack to evade codegen failure for LLVMGPUDistribute.
+  if (aContractionDims.value().m.front() <= 2) {
+    return false;
+  }
+
   SmallVector<int64_t, 4> aStaticDims = aLinalgOp.getStaticLoopRanges();
   SmallVector<int64_t, 4> bStaticDims = bLinalgOp.getStaticLoopRanges();
   for (auto nDim : aContractionDims->n) {
