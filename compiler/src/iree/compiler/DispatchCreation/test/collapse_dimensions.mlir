@@ -787,3 +787,42 @@ util.func @elementwise_dynamic(%arg0: tensor<?x?xf32>, %arg1: tensor<?x?xf32>) -
 //       CHECK:   %[[EXPAND:.+]] = tensor.expand_shape %[[DISPATCH]]
 //  CHECK-SAME:     {{.+}} output_shape [%[[DIM0]], %[[DIM1]]]
 //       CHECK:   util.return %[[EXPAND]] : tensor<?x?xf32>
+
+// -----
+
+util.func public @reduction(%arg0: tensor<2x32x10x16384xf32>, %arg1: tensor<2x32xf32>, %arg2: tensor<2x32x10x16384xf16>, %arg3: tensor<2x32x10x16384xf32>) -> tensor<2x32x10x16384xf32> {
+  %0 = tensor.empty() : tensor<2x32xf32>
+  %cst = arith.constant 1.000000e-01 : f32
+  %cst_0 = arith.constant 1.000000e-01 : f32
+  %1 = flow.dispatch.region -> (tensor<2x32x10x16384xf32>) {
+    %2 = linalg.generic {indexing_maps = [affine_map<(d0, d1, d2, d3) -> (d0, d1, d2, d3)>, affine_map<(d0, d1, d2, d3) -> (d0, d1)>, affine_map<(d0, d1, d2, d3) -> (d0, d1)>], iterator_types = ["parallel", "parallel", "reduction", "reduction"]} ins(%arg0, %arg1 : tensor<2x32x10x16384xf32>, tensor<2x32xf32>) outs(%0 : tensor<2x32xf32>) {
+    ^bb0(%in: f32, %in_1: f32, %out: f32):
+      %4 = arith.subf %in, %in_1 : f32
+      %5 = arith.mulf %4, %4 : f32
+      %6 = arith.addf %5, %out : f32
+      linalg.yield %6 : f32
+    } -> tensor<2x32xf32>
+    %3 = linalg.generic {indexing_maps = [affine_map<(d0, d1, d2, d3) -> (d0, d1, d2, d3)>, affine_map<(d0, d1, d2, d3) -> (d0, d1)>, affine_map<(d0, d1, d2, d3) -> (d0, d1)>, affine_map<(d0, d1, d2, d3) -> (d0, d1, d2, d3)>], iterator_types = ["parallel", "parallel", "parallel", "parallel"]} ins(%arg2, %arg1, %2 : tensor<2x32x10x16384xf16>, tensor<2x32xf32>, tensor<2x32xf32>) outs(%arg3 : tensor<2x32x10x16384xf32>) {
+    ^bb0(%in: f16, %in_1: f32, %in_2: f32, %out: f32):
+      %4 = arith.divf %in_2, %cst : f32
+      %5 = arith.addf %4, %cst_0 : f32
+      %6 = math.rsqrt %5 : f32
+      %7 = arith.extf %in : f16 to f32
+      %8 = arith.subf %7, %in_1 : f32
+      %9 = arith.mulf %8, %6 : f32
+      linalg.yield %9 : f32
+    } -> tensor<2x32x10x16384xf32>                
+    flow.return %3 : tensor<2x32x10x16384xf32>
+  }
+  util.return %1 : tensor<2x32x10x16384xf32>
+}
+
+
+// CHECK-LABEL: util.func public @reduction
+//       CHECK:   %[[DISPATCH:.+]] = flow.dispatch.region
+//       CHECK:     %[[REDUCTION:.+]] = linalg.generic
+//  CHECK-SAME:      iterator_types = ["parallel", "reduction"]
+//       CHECK:     %[[ELEMENTWISE:.+]] = linalg.generic
+//  CHECK-SAME:      iterator_types = ["parallel", "parallel"]
+//  CHECK-SAME:      ins(%{{.+}}, %{{.+}}, %[[REDUCTION]]
+//       CHECK:     flow.return %[[ELEMENTWISE]] : tensor<64x163840xf32>
