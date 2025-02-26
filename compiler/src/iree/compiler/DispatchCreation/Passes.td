@@ -28,6 +28,7 @@ def BubbleUpExpandShapesPass :
   let summary = "Propagate expand_shapes up the program (and collapse_shapes down).";
   let dependentDialects = [
     "mlir::affine::AffineDialect",
+    "IREE::LinalgExt::IREELinalgExtDialect",
   ];
 }
 

@@ -42,18 +42,6 @@ struct SinkReshapesPass final
   void runOnOperation() override;
 };
 
-/// Returns true if two operations are fusable through tile and fuse. Ideally
-/// this should use the same method as dispatch region formation where this
-/// fusion analysis actually happens, but that requires a direct producer ->
-/// consumer relationship and indexing maps for the right analysis. Here
-/// we just approximate it (and try to be optimistic)
-static bool isFusableUsingTileAndFuse(Operation *producer,
-                                      Operation *consumer) {
-  return llvm::isa_and_nonnull<IREE::LinalgExt::LinalgFusionOpInterface,
-                               linalg::LinalgOp, linalg::UnPackOp,
-                               IREE::Encoding::UnsetEncodingOp>(producer);
-}
-
 /// Control function to check if an `tensor.expand_shape` (which is producer of
 /// `opOperand`) should be pushed past the `genericOp` (which is the consumer of
 /// `opOperand`).

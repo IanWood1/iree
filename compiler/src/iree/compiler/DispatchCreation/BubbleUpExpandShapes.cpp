@@ -129,9 +129,23 @@ void BubbleUpExpandShapesPass::runOnOperation() {
           return false;
         }
 
-        // Do not push down collapse shape across consumer if it is a bit-extend
-        // op. The bit-extend ops get cloned into producer dispatches, and the
-        // `collapse_shape` op going past dequant, prevents this clong.
+        if (isa<tensor::ExpandShapeOp>(consumer) &&
+            llvm::none_of(
+                consumer->getUsers(), [&](Operation *collapseConsumer) {
+                  return isFusableUsingTileAndFuse(producer, collapseConsumer);
+                })) {
+          return false;
+        }
+        if (isa<tensor::CollapseShapeOp>(producer) &&
+            !isFusableUsingTileAndFuse(producer->getOperand(0).getDefiningOp(),
+                                       consumer)) {
+          return false;
+        }
+
+        // Do not push down collapse shape across consumer if it is a
+        // bit-extend op. The bit-extend ops get cloned into producer
+        // dispatches, and the `collapse_shape` op going past dequant,
+        // prevents this clong.
         if (IREE::LinalgExt::isBitExtendOp(consumer)) {
           return false;
         }

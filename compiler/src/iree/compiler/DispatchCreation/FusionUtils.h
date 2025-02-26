@@ -15,6 +15,13 @@
 #include "mlir/IR/PatternMatch.h"
 
 namespace mlir::iree_compiler::DispatchCreation {
+///
+/// Returns true if two operations are fusable through tile and fuse. Ideally
+/// this should use the same method as dispatch region formation where this
+/// fusion analysis actually happens, but that requires a direct producer ->
+/// consumer relationship and indexing maps for the right analysis. Here
+/// we just approximate it (and try to be optimistic)
+bool isFusableUsingTileAndFuse(Operation *producer, Operation *consumer);
 
 /// Return true of the producer and consumer of `operand` are fusable
 /// using elementwise op fusion transformation.

@@ -9,6 +9,8 @@
 
 #include "compiler/src/iree/compiler/DispatchCreation/FusionUtils.h"
 #include "compiler/src/iree/compiler/Dialect/Flow/Transforms/RegionOpUtils.h"
+#include "iree/compiler/Dialect/Encoding/IR/EncodingOps.h"
+#include "iree/compiler/Dialect/LinalgExt/IR/LinalgExtInterfaces.h"
 #include "iree/compiler/Dialect/LinalgExt/Utils/Utils.h"
 #include "mlir/Analysis/SliceAnalysis.h"
 #include "mlir/Analysis/TopologicalSortUtils.h"
@@ -16,6 +18,20 @@
 #include "mlir/Transforms/RegionUtils.h"
 
 namespace mlir::iree_compiler::DispatchCreation {
+
+/// Returns true if two operations are fusable through tile and fuse. Ideally
+/// this should use the same method as dispatch region formation where this
+/// fusion analysis actually happens, but that requires a direct producer ->
+/// consumer relationship and indexing maps for the right analysis. Here
+/// we just approximate it (and try to be optimistic)
+bool isFusableUsingTileAndFuse(Operation *producer, Operation *consumer) {
+  return llvm::isa_and_nonnull<IREE::LinalgExt::LinalgFusionOpInterface,
+                               linalg::LinalgOp, linalg::UnPackOp,
+                               IREE::Encoding::UnsetEncodingOp>(producer) &&
+         llvm::isa_and_nonnull<IREE::LinalgExt::LinalgFusionOpInterface,
+                               linalg::LinalgOp, linalg::UnPackOp,
+                               IREE::Encoding::UnsetEncodingOp>(consumer);
+}
 
 bool areFusableAsElementwiseOps(MLIRContext *context, OpOperand *fusedOperand,
                                 bool fuseMultiReduction) {
