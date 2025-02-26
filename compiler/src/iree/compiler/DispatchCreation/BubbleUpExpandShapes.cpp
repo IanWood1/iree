@@ -125,6 +125,9 @@ void BubbleUpExpandShapesPass::runOnOperation() {
       [](OpOperand *fusedOperand) {
         Operation *producer = fusedOperand->get().getDefiningOp();
         Operation *consumer = fusedOperand->getOwner();
+        if (isa<tensor::ExpandShapeOp>(consumer)) {
+          return false;
+        }
         if (!IREE::Flow::isNonNullAndOutsideDispatch({producer, consumer})) {
           return false;
         }
