@@ -604,8 +604,7 @@ isFusableWithConsumer(OpOperand &fusedOperand,
     // Check if interchange in the consumer makes it fusable.
     // Currently limit it to horizontally fused gemms.
     // TODO(#20019) to remove this restriction.
-    if (!IREE::LinalgExt::isaHorizontallyFusedContraction(producer) ||
-        !makeConsumerFusableViaInterchange(fusedOperand,
+    if (!makeConsumerFusableViaInterchange(fusedOperand,
                                            rootOuterParallelLoops)) {
       return false;
     }
