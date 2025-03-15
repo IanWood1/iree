@@ -95,7 +95,7 @@ static bool isScalarOperation(int workload, Operation *op) {
 /// Given a `rootOp` return a DAG of the program that represents
 /// operations that can be moved into a scalar dispatch with the `rootOp`
 /// as the root of the DAG.
-llvm::SetVector<Operation *> computeSliceToMoveIntoDispatch(
+static llvm::SetVector<Operation *> computeSliceToMoveIntoDispatch(
     int workload, Operation *rootOp,
     const llvm::DenseMap<Operation *, Operation *> &opToRootMap) {
   BackwardSliceOptions options;
@@ -215,13 +215,13 @@ void FormScalarDispatchesPass::runOnOperation() {
         // define values used inside of op's regions
         mlir::visitUsedValuesDefinedAbove(
             prevOp->getRegions(), [&](OpOperand *operand) {
-              if (auto definingOp = operand->get().getDefiningOp()) {
+              if (auto *definingOp = operand->get().getDefiningOp()) {
                 ineligibleRoots.insert(definingOp);
               }
             });
 
         for (Value val : prevOp->getOperands()) {
-          if (auto definingOp = val.getDefiningOp()) {
+          if (auto *definingOp = val.getDefiningOp()) {
             ineligibleRoots.insert(definingOp);
           }
         }
@@ -233,7 +233,7 @@ void FormScalarDispatchesPass::runOnOperation() {
       opToRootMap[prevOp] = op;
       llvm::SetVector<Operation *> currSlice = computeSliceToMoveIntoDispatch(
           scalarWorkloadLimit, prevOp, opToRootMap);
-      for (auto sliceOp : currSlice) {
+      for (auto *sliceOp : currSlice) {
         assert(!opToRootMap.count(sliceOp) &&
                "trying to add same op to two dispatches");
         opToRootMap[sliceOp] = op;

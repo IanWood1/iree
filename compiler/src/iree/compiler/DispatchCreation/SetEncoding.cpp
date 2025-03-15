@@ -36,8 +36,8 @@ using IREE::Encoding::EncodingAttr;
 // Utility functions
 //===---------------------------------------------------------------------===//
 
-Value setEncoding(OpBuilder &builder, Location loc, Value source,
-                  EncodingAttr encodingAttr) {
+static Value setEncoding(OpBuilder &builder, Location loc, Value source,
+                         EncodingAttr encodingAttr) {
   auto sourceType = cast<RankedTensorType>(source.getType());
   auto resultType = RankedTensorType::get(
       sourceType.getShape(), sourceType.getElementType(), encodingAttr);

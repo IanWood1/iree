@@ -40,9 +40,9 @@ namespace mlir::iree_compiler::DispatchCreation {
 
 static LogicalResult
 foldUnitDimsOnGlobal(IRRewriter &rewriter, IREE::Util::GlobalOpInterface global,
-                     SmallVector<IREE::Util::GlobalLoadOpInterface> loadOps,
-                     SmallVector<IREE::Util::GlobalStoreOpInterface> storeOps,
-                     SymbolTable moduleSymbols) {
+                     ArrayRef<IREE::Util::GlobalLoadOpInterface> loadOps,
+                     ArrayRef<IREE::Util::GlobalStoreOpInterface> storeOps,
+                     const SymbolTable &moduleSymbols) {
   // Create a new transformed GlobalOp.
   SmallVector<int64_t> newShape;
   auto globalType = cast<RankedTensorType>(global.getGlobalType());

@@ -949,7 +949,7 @@ createFusionGroups(TensorDimTrackingRewriter &rewriter,
     (void)sortResult;
     assert(sortResult && "could not compute topological sorting");
 
-    int rootPos = 0;
+    uint64_t rootPos = 0;
     for (auto [index, fusedOperation] : llvm::enumerate(currFusedOperations)) {
       if (fusedOperation == root) {
         rootPos = index;

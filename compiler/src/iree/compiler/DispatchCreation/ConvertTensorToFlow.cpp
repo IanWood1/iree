@@ -63,7 +63,7 @@ wrapInWorkgroupsOp(mlir::TensorDimTrackingRewriter &rewriter, Operation *op) {
 /// Wrap all given ops in a DispatchWorkgroupsOp.
 static FailureOr<SmallVector<IREE::Flow::DispatchWorkgroupsOp>>
 wrapInWorkgroupsOp(mlir::TensorDimTrackingRewriter &rewriter,
-                   SmallVector<Operation *> rootOps) {
+                   ArrayRef<Operation *> rootOps) {
   SmallVector<IREE::Flow::DispatchWorkgroupsOp> result;
   for (Operation *rootOp : rootOps) {
     auto workgroupsOp = wrapInWorkgroupsOp(rewriter, rootOp);
@@ -77,7 +77,7 @@ wrapInWorkgroupsOp(mlir::TensorDimTrackingRewriter &rewriter,
 /// Rewrite top-level InsertSliceOps to FlowUpdateOps or wrap them in a
 /// dispatch region. Returns the number of dispatches for non-contiguous insert
 /// slices created.
-static FailureOr<int> convertInsertSliceOps(
+static FailureOr<int64_t> convertInsertSliceOps(
     mlir::TensorDimTrackingRewriter &rewriter, mlir::FunctionOpInterface funcOp,
     SmallVector<IREE::Flow::DispatchWorkgroupsOp> &workgroupsOps) {
   // Find eligible InsertSliceOps.

@@ -118,7 +118,7 @@ LogicalResult moveOperandDefs(RewriterBase &rewriter,
   options.inclusive = true;
 
   llvm::SetVector<Operation *> slice;
-  for (auto op : operations) {
+  for (auto *op : operations) {
     for (auto operand : op->getOperands()) {
       getBackwardSlice(operand, &slice, options);
     }
@@ -134,7 +134,7 @@ LogicalResult moveOperandDefs(RewriterBase &rewriter,
   }
 
   mlir::topologicalSort(slice);
-  for (auto op : slice) {
+  for (auto *op : slice) {
     rewriter.moveOpBefore(op, insertionPoint);
   }
   return success();

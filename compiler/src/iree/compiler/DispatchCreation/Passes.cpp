@@ -116,7 +116,8 @@ static void addCleanupPatterns(OpPassManager &passManager) {
 // Pipelines
 //===----------------------------------------------------------------------===//
 
-void addDispatchRegionCreationPreprocessingPasses(OpPassManager &passManager) {
+static void
+addDispatchRegionCreationPreprocessingPasses(OpPassManager &passManager) {
   // 1. Do some simple elementwise op fusion. This could be skipped,
   //    but could reduce the surface area of ops to handle later.
   FunctionLikeNest(passManager)

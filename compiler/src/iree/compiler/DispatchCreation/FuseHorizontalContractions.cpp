@@ -366,7 +366,7 @@ fuseContractionsHorizontally(RewriterBase &rewriter, Location loc,
   fusedInsIndexingMaps.push_back(seedOpLhsIndexingMap);
 
   llvm::SmallDenseSet<Operation *> droppedOps;
-  for (auto op : linalgOps) {
+  for (auto *op : linalgOps) {
     auto linalgOp = dyn_cast<linalg::LinalgOp>(op);
     if (!linalgOp ||
         linalgOp.getDpsInputOperand(0)->get() != seedOpLhs->get()) {
@@ -420,7 +420,7 @@ fuseContractionsHorizontally(RewriterBase &rewriter, Location loc,
   int64_t rhsIndex = 0;
   int64_t outsIndex = fusedOp.getNumDpsInputs();
   SmallVector<Value> yieldVals;
-  for (auto op : linalgOps) {
+  for (auto *op : linalgOps) {
     if (droppedOps.contains(op)) {
       continue;
     }
@@ -452,7 +452,7 @@ fuseContractionsHorizontally(RewriterBase &rewriter, Location loc,
   rewriter.create<linalg::YieldOp>(loc, yieldVals);
 
   unsigned resultsIndex = 0;
-  for (auto linalgOp : linalgOps) {
+  for (auto *linalgOp : linalgOps) {
     unsigned numResults = linalgOp->getNumResults();
     rewriter.replaceOp(linalgOp,
                        fusedOp->getResults().slice(resultsIndex, numResults));

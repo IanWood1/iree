@@ -797,13 +797,13 @@ updateConsumersFromProducers(ArrayRef<Operation *> slice,
 
   // Slice is topologically sorted to ensure that `op`'s producers have been
   // updated before we visit it.
-  for (auto op : slice) {
+  for (auto *op : slice) {
     auto consumerOp = cast<LinalgFusionOpInterface>(op);
     CollapseInfo &consumerInfo = opMap.find(consumerOp)->second;
 
     for (auto *operand :
          cast<DestinationStyleOpInterface>(op).getDpsInputOperands()) {
-      auto producerOp = operand->get().getDefiningOp();
+      auto *producerOp = operand->get().getDefiningOp();
       if (!producerOp || IREE::Flow::isNonNullAndOutsideDispatch(producerOp)) {
         continue;
       }
@@ -836,7 +836,7 @@ updateProducersFromConsumers(ArrayRef<Operation *> slice,
 
   // Iterate over `slice` in reverse so that we visit each `op` 's consumer
   // before visiting `op`.
-  for (auto op : llvm::reverse(slice)) {
+  for (auto *op : llvm::reverse(slice)) {
     auto producerOp = cast<LinalgFusionOpInterface>(op);
     CollapseInfo &producerInfo = opMap.find(producerOp)->second;
 

@@ -78,7 +78,7 @@ struct TransposeGenericOpPattern final
 
     std::optional<AffineMap> mapForInterchange;
 
-    for (auto operand : genericOp.getDpsInputOperands()) {
+    for (auto *operand : genericOp.getDpsInputOperands()) {
       // Check that the producer is a named op or a reduction op (i.e. not
       // elementwise op) with a single use.
       auto producer = operand->get().getDefiningOp<linalg::LinalgOp>();

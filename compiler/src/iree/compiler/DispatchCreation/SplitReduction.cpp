@@ -34,7 +34,7 @@ static llvm::cl::list<int64_t> topkSplitReductionRatio(
 
 static LogicalResult splitReductionOnMatmul(
     RewriterBase &rewriter, linalg::MatmulOp op,
-    linalg::ControlSplitReductionFn controlSplitReductionFn) {
+    const linalg::ControlSplitReductionFn &controlSplitReductionFn) {
   // Since user information about compilation are passed through attributes we
   // need to make sure to propagate those.
   SmallVector<NamedAttribute> prunedAttributeList =
@@ -60,7 +60,7 @@ struct SplitReductionPass final
     }
 
     MLIRContext *context = &getContext();
-    auto funcOp = getOperation();
+    auto *funcOp = getOperation();
 
     auto matmulSplitReductionControlFn =
         [&](linalg::LinalgOp op) -> linalg::SplitReductionOptions {

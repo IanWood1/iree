@@ -91,7 +91,7 @@ struct GatherFusionPattern final : public OpRewritePattern<tensor::ExtractOp> {
     rewriter.cloneRegionBefore(producerOp.getRegion(), consumerOp.getRegion(),
                                consumerOp.getRegion().begin());
     Block &clonedBlock = consumerOp.getRegion().front();
-    auto producerTermOp = clonedBlock.getTerminator();
+    auto *producerTermOp = clonedBlock.getTerminator();
 
     rewriter.inlineBlockBefore(&clonedBlock, extractOp->getNextNode(),
                                extractOps);
