@@ -92,6 +92,24 @@ def OpGroupNonStructuredOps : OpDocGroup {
 
 let opDocGroup = OpGroupNonStructuredOps in {
 
+def IREELinalgExt_DeinterleaveOp :
+  IREELinalgExt_PureOp<"deinterleave", 
+    [AllTypesMatch<["res1", "res2"]>]> {
+  let summary = "TODO";
+  let description = [{
+    TODO
+  }];
+
+
+  let arguments = 
+    (ins AnyRankedTensorOrMemRefType:$source);
+  let results = 
+    (outs AnyRankedTensorOrMemRefType:$res1, AnyRankedTensorOrMemRefType:$res2);
+  let assemblyFormat = [{
+    $source attr-dict `:` type($source) `->` type($res1)
+  }];
+}
+
 def IREELinalgExt_ScatterOp : IREELinalgExt_Op<"scatter",
     [DeclareOpInterfaceMethods<ReifyRankedShapedTypeOpInterface>,
      DeclareOpInterfaceMethods<LinalgFusionInterface,
