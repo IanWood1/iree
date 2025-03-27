@@ -230,7 +230,7 @@ struct DispatchTensorStoreOpInterface
           DispatchTensorStoreOpInterface, IREE::Flow::DispatchTensorStoreOp> {
   bool bufferizesToMemoryRead(Operation *op, OpOperand &opOperand,
                               const AnalysisState &state) const {
-    return true;
+    return false;
   }
 
   bool bufferizesToMemoryWrite(Operation *op, OpOperand &opOperand,
@@ -378,6 +378,49 @@ struct LinalgExtOpInterface
                           const BufferizationOptions &options) const {
     return bufferizeLinalgExtOp(
         rewriter, cast<IREE::LinalgExt::LinalgExtOp>(op), options);
+  }
+};
+
+struct DeinterleaveOpInterface
+    : public BufferizableOpInterface::ExternalModel<
+          DeinterleaveOpInterface, IREE::LinalgExt::DeinterleaveOp> {
+  bool bufferizesToMemoryRead(Operation *, OpOperand &,
+                              const AnalysisState &) const {
+    return false;
+  }
+
+  bool bufferizesToMemoryWrite(Operation *, OpOperand &,
+                               const AnalysisState &) const {
+    return false;
+  }
+
+  bufferization::AliasingValueList
+  getAliasingValues(Operation *, OpOperand &operand,
+                    const AnalysisState &) const {
+    return {};
+  }
+
+  bufferization::AliasingOpOperandList
+  getAliasingOpOperands(Operation *, Value &value,
+                        const AnalysisState &) const {
+    return {};
+  }
+
+  LogicalResult bufferize(Operation *op, RewriterBase &rewriter,
+                          const BufferizationOptions &options) const {
+    OpBuilder::InsertionGuard g(rewriter);
+    rewriter.setInsertionPoint(op);
+    auto deinterleaveOp = cast<IREE::LinalgExt ::DeinterleaveOp>(op);
+    auto buffer =
+        getBuffer(rewriter, deinterleaveOp.getSource(), options).value();
+    auto resultType = cast<MemRefType>(buffer.getType())
+                          .clone(deinterleaveOp.getRes1().getType().getShape());
+    auto *newOp = mlir::cloneWithoutRegions(
+        rewriter, op, TypeRange{resultType, resultType}, buffer);
+    bufferization::replaceOpWithBufferizedValues(
+        rewriter, op,
+        SmallVector<Value>{newOp->getResult(0), newOp->getResult(1)});
+    return success();
   }
 };
 
@@ -665,6 +708,8 @@ void registerBufferizationInterfaces(DialectRegistry &registry) {
         LinalgExtOpInterface<IREE::LinalgExt::WinogradOutputTransformOp>>(*ctx);
     IREE::LinalgExt::AttentionOp::attachInterface<
         LinalgExtOpInterface<IREE::LinalgExt::AttentionOp>>(*ctx);
+    IREE::LinalgExt::DeinterleaveOp::attachInterface<DeinterleaveOpInterface>(
+        *ctx);
   });
   registry.insert<linalg::LinalgDialect>();
   registry.addExtension(+[](MLIRContext *ctx, linalg::LinalgDialect *dialect) {
