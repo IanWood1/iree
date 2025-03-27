@@ -230,7 +230,7 @@ struct DispatchTensorStoreOpInterface
           DispatchTensorStoreOpInterface, IREE::Flow::DispatchTensorStoreOp> {
   bool bufferizesToMemoryRead(Operation *op, OpOperand &opOperand,
                               const AnalysisState &state) const {
-    return false;
+    return true;
   }
 
   bool bufferizesToMemoryWrite(Operation *op, OpOperand &opOperand,

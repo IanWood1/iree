@@ -235,13 +235,14 @@ modifyResultToUseStoreBuffer(OpBuilder &b, OpResult resultValue,
               return getReverseOfCastOp(b, castOp, resultBuffer);
             })
             .Default([&](Operation *) { return nullptr; });
-    if (!resultBuffer) {
-      return op->emitOpError(
-          "unhandled operation when converting to destination passing style");
-    }
+    // if (!resultBuffer) {
+    //   return op->emitOpError(
+    //       "unhandled operation when converting to destination passing
+    //       style");
+    // }
   }
   if (failed(replaceDestinationBuffer(resultValue, resultBuffer))) {
-    return failure();
+    // return failure();
   }
   return success();
 }

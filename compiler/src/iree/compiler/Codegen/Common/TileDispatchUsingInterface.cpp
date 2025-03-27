@@ -525,7 +525,7 @@ tileAndFuseDispatchUsingSCFForOp(RewriterBase &rewriter, TilingInterface op,
       FailureOr<TilingResult> swapSliceResult =
           tensor::replaceExtractSliceWithTiledProducer(rewriter, sliceOp,
                                                        untiledValue);
-      if (failed(swapSliceResult) || swapSliceResult->tiledValues.size() != 1) {
+      if (failed(swapSliceResult)) {
         return rewriter.notifyMatchFailure(sliceOp,
                                            "fusion along slice op failed");
       }

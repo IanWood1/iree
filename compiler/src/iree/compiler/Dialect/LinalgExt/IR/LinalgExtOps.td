@@ -100,6 +100,7 @@ def IREELinalgExt_DeinterleaveOp :
        "getLoopIteratorTypes",
        "getResultTilePosition",
        "getTiledImplementation",
+       "generateScalarImplementation",
        "generateResultTileValue",
        "getIterationDomainTileFromResultTile"]>]>{
   let summary = "TODO";
