@@ -2794,4 +2794,79 @@ LogicalResult CustomOp::getResultTilePosition(
   return success();
 }
 
+SmallVector<utils::IteratorType> DeinterleaveOp::getLoopIteratorTypes() {
+  return SmallVector<utils::IteratorType>(getSource().getType().getRank(),
+                                          utils::IteratorType::parallel);
+}
+
+SmallVector<Range> DeinterleaveOp::getIterationDomain(OpBuilder &builder) {
+  Location loc = getLoc();
+  OpFoldResult zero = builder.getIndexAttr(0);
+  OpFoldResult one = builder.getIndexAttr(1);
+  SmallVector<Range> ranges;
+  for (auto dim : llvm::seq<int64_t>(0, getSource().getType().getRank())) {
+    OpFoldResult ub = getDim(builder, loc, getSource(), dim);
+    ranges.emplace_back(Range{zero, ub, one});
+  }
+  return ranges;
+}
+
+FailureOr<TilingResult>
+DeinterleaveOp::getTiledImplementation(OpBuilder &builder,
+                                       ArrayRef<OpFoldResult> offsets,
+                                       ArrayRef<OpFoldResult> sizes) {
+  Location loc = getLoc();
+  auto oneAttr = builder.getI64IntegerAttr(1);
+  SmallVector<OpFoldResult> strides(getSource().getType().getRank(), oneAttr);
+  auto expr = builder.getAffineSymbolExpr(0);
+  SmallVector<OpFoldResult> newSizes(sizes);
+  newSizes.back() = affine::makeComposedFoldedAffineApply(
+      builder, loc, expr * 2, {sizes.back()});
+  SmallVector<OpFoldResult> a;
+  Operation *slice =
+      getSlice(builder, loc, getSource(), offsets, newSizes, strides);
+  auto sourceType = cast<ShapedType>(slice->getResult(0).getType());
+  SmallVector<int64_t> resultShape(sourceType.getShape());
+  // TODO: handle dynamic?
+  resultShape.back() /= 2;
+  auto resultType = sourceType.clone(resultShape);
+
+  Operation *tiledOp =
+      mlir::clone(builder, getOperation(), SmallVector<Type>(2, resultType),
+                  ValueRange{slice->getResult(0)});
+  return TilingResult{{tiledOp}, tiledOp->getResults(), {slice}};
+}
+
+LogicalResult DeinterleaveOp::getResultTilePosition(
+    OpBuilder &builder, unsigned resultNumber, ArrayRef<OpFoldResult> offsets,
+    ArrayRef<OpFoldResult> sizes, SmallVector<OpFoldResult> &resultOffsets,
+    SmallVector<OpFoldResult> &resultSizes) {
+  auto zeroAttr = builder.getI64IntegerAttr(0);
+  auto rank = getSource().getType().getRank();
+  resultOffsets.resize(rank, zeroAttr);
+  resultSizes.resize(rank);
+
+  Location loc = getLoc();
+  for (auto dim : llvm::seq<int64_t>(0, rank)) {
+    resultSizes[dim] = getDim(builder, loc, getSource(), dim);
+  }
+  return success();
+}
+
+FailureOr<TilingResult> DeinterleaveOp::generateResultTileValue(
+    OpBuilder &builder, unsigned resultNumber, ArrayRef<OpFoldResult> offsets,
+    ArrayRef<OpFoldResult> sizes) {
+  return getTiledImplementation(builder, offsets, sizes);
+}
+
+LogicalResult DeinterleaveOp::getIterationDomainTileFromResultTile(
+    OpBuilder &b, unsigned operandNumber, ArrayRef<OpFoldResult> offsets,
+    ArrayRef<OpFoldResult> sizes,
+    SmallVectorImpl<OpFoldResult> &iterDomainOffsets,
+    SmallVectorImpl<OpFoldResult> &iterDomainSizes) {
+  iterDomainOffsets.assign(offsets.begin(), offsets.end());
+  iterDomainSizes.assign(sizes.begin(), sizes.end());
+  return success();
+}
+
 } // namespace mlir::iree_compiler::IREE::LinalgExt

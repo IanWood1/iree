@@ -93,8 +93,15 @@ def OpGroupNonStructuredOps : OpDocGroup {
 let opDocGroup = OpGroupNonStructuredOps in {
 
 def IREELinalgExt_DeinterleaveOp :
-  IREELinalgExt_PureOp<"deinterleave", 
-    [AllTypesMatch<["res1", "res2"]>]> {
+  IREELinalgExt_PureOp<"deinterleave", [
+    AllTypesMatch<["res1", "res2"]>,
+    DeclareOpInterfaceMethods<TilingInterface,
+      ["getIterationDomain",
+       "getLoopIteratorTypes",
+       "getResultTilePosition",
+       "getTiledImplementation",
+       "generateResultTileValue",
+       "getIterationDomainTileFromResultTile"]>]>{
   let summary = "TODO";
   let description = [{
     TODO
