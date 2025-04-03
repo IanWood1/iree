@@ -18,6 +18,9 @@
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "torch-mlir-dialects/Dialect/TMTensor/IR/TMTensorOps.h"
+#include "torch-mlir/Conversion/Utils/Utils.h"
+#include "torch-mlir/Dialect/Torch/IR/TorchOps.h"
+#include "torch-mlir/Dialect/TorchConversion/IR/TorchConversionOps.h"
 
 namespace mlir::iree_compiler::TorchInput {
 
@@ -97,6 +100,65 @@ struct ScatterOpConversion
   }
 };
 } // namespace
+
+struct GatherOpConversion
+    : public OpRewritePattern<torch::Torch::AtenIndexSelectOp> {
+
+  using OpRewritePattern<torch::Torch::AtenIndexSelectOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(torch::Torch::AtenIndexSelectOp op,
+                                PatternRewriter &rewriter) const override {
+    int64_t dimInt;
+    if (!matchPattern(op.getDim(), torch::Torch::m_TorchConstantInt(&dimInt)) ||
+        dimInt != 0) {
+      return op->emitError("unimplemented: dim is not constant");
+    }
+
+    Value in = op.getSelf();
+    auto loc = op.getLoc();
+    TensorType inType =
+        cast<torch::Torch::ValueTensorType>(in.getType()).toBuiltinTensor();
+    Value source = rewriter.create<torch::TorchConversion::ToBuiltinTensorOp>(
+        loc, inType, in);
+    TensorType indicesType =
+        cast<torch::Torch::ValueTensorType>(op.getIndex().getType())
+            .toBuiltinTensor();
+    auto indices = rewriter.create<torch::TorchConversion::ToBuiltinTensorOp>(
+        loc, indicesType, op.getIndex());
+    TensorType resultType =
+        cast<torch::Torch::ValueTensorType>(op.getType()).toBuiltinTensor();
+
+    SmallVector<Value> resultShape =
+        torch::Torch::getTensorSizes(rewriter, loc, source);
+    resultShape[0] =
+        torch::Torch::getTensorSizesUntilDim(rewriter, loc, indices, 0)[0];
+    Value empty = rewriter.create<tensor::EmptyOp>(
+        loc, getAsOpFoldResult(resultShape), resultType.getElementType());
+    SmallVector<int64_t> dimMap = {0};
+    auto gatherOp = rewriter.create<IREE::LinalgExt::GatherOp>(
+        op.getLoc(), TypeRange{resultType}, ValueRange{source, indices},
+        ValueRange{empty}, dimMap);
+
+    {
+      // Create a region with two bb args with the same type as the element type
+      // of source and result.
+      PatternRewriter::InsertionGuard g(rewriter);
+      auto *region = &gatherOp.getRegion();
+      auto *bb = rewriter.createBlock(
+          region, region->begin(),
+          TypeRange{inType.getElementType(), resultType.getElementType()},
+          {loc, loc});
+      rewriter.create<IREE::LinalgExt::YieldOp>(loc,
+                                                ValueRange{bb->getArgument(0)});
+    }
+
+    auto torchCast =
+        rewriter.create<torch::TorchConversion::FromBuiltinTensorOp>(
+            loc, cast<torch::Torch::ValueTensorType>(op.getType()),
+            gatherOp->getResult(0));
+    rewriter.replaceOp(op, torchCast);
+    return failure();
+  }
+};
 
 static SmallVector<AffineMap> getStandardAttentionIndexingMaps(MLIRContext *ctx,
                                                                bool hasMask) {
@@ -238,6 +300,7 @@ public:
 
     patterns.add<ScatterOpConversion>(context);
     patterns.add<AttentionOpConversion>(context);
+    patterns.add<GatherOpConversion>(context);
 
     if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
       signalPassFailure();
