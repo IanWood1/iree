@@ -1331,3 +1331,64 @@ util.func @attention_rope_fusion(%arg0: tensor<10x20x30x50xbf16>,
 //  CHECK-SAME:         ins(%[[Q]], %[[K]], %[[V]]
 //       CHECK:     flow.return %[[ATTENTION]]
 //       CHECK:   util.return %[[DISPATCH]]
+
+// -----
+
+util.func @fuse_gather_elementwise(%source : tensor<2x2x2048xi32>,
+                                   %indices : tensor<2xi32>) -> tensor<2048xi32> {
+  %cst = arith.constant 2 : i32
+  %empty = tensor.empty() : tensor<2048xi32>
+  %result = iree_linalg_ext.gather dimension_map = [0, 1]
+                          ins(%source, %indices : tensor<2x2x2048xi32>, tensor<2xi32>)
+                          outs(%empty: tensor<2048xi32>) {
+                    ^bb0(%arg0: i32, %arg1: i32):
+                      iree_linalg_ext.yield %arg0 : i32
+  } -> tensor<2048xi32>
+  %generic = linalg.generic {indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>], iterator_types = ["parallel"]} ins(%result : tensor<2048xi32>) outs(%empty: tensor<2048xi32>) {
+    ^bb0(%arg0: i32, %arg1: i32):
+      %0 = arith.muli %arg0, %cst : i32
+      linalg.yield %0 : i32
+  } -> tensor<2048xi32>
+  util.return %generic : tensor<2048xi32>
+}
+// CHECK-LABEL: func public @fuse_gather_elementwise
+// CHECK-SAME:     %[[SOURCE:.+]]: tensor<2x2x2048xi32>
+// CHECK-SAME:     %[[INDICES:.+]]: tensor<2xi32>
+//      CHECK:   %[[DISPATCH:.+]] = flow.dispatch.region
+//      CHECK:     %[[GATHER:.+]] = iree_linalg_ext.gather
+// CHECK-SAME:         ins(%[[SOURCE]], %[[INDICES]] :
+//      CHECK:     %[[GENERIC:.+]] = linalg.generic
+// CHECK-SAME:         ins(%[[GATHER]] :
+//      CHECK:     flow.return %[[GENERIC]]
+//      CHECK:   util.return %[[DISPATCH]]
+
+// -----
+
+util.func @fuse_gather_matmul(%source : tensor<2x2x1024x2048xf32>,
+                              %indices : tensor<2xi32>,
+                              %rhs : tensor<2048x2048xf32>) -> tensor<1024x2048xf32> {
+  %empty0 = tensor.empty() : tensor<1024x2048xf32>
+  %result = iree_linalg_ext.gather dimension_map = [0, 1]
+                          ins(%source, %indices : tensor<2x2x1024x2048xf32>, tensor<2xi32>)
+                          outs(%empty0: tensor<1024x2048xf32>) {
+                    ^bb0(%arg0: f32, %arg1: f32):
+                      iree_linalg_ext.yield %arg0 : f32
+  } -> tensor<1024x2048xf32>
+  %empty1 = tensor.empty() : tensor<1024x2048xf32>
+  %cst0 = arith.constant 0.0 : f32
+  %fill = linalg.fill ins(%cst0 : f32)
+      outs(%empty1 : tensor<1024x2048xf32>) -> tensor<1024x2048xf32>
+  %matmul = linalg.matmul ins(%result, %rhs : tensor<1024x2048xf32>, tensor<2048x2048xf32>)
+      outs(%fill : tensor<1024x2048xf32>) -> tensor<1024x2048xf32>
+  util.return %matmul : tensor<1024x2048xf32>
+}
+// CHECK-LABEL: func public @fuse_gather_elementwise
+// CHECK-SAME:     %[[SOURCE:.+]]: tensor<2x2x1024x2048xf32>
+// CHECK-SAME:     %[[INDICES:.+]]: tensor<2xf32>
+//      CHECK:   %[[DISPATCH:.+]] = flow.dispatch.region
+//      CHECK:     %[[GATHER:.+]] = iree_linalg_ext.gather
+// CHECK-SAME:         ins(%[[SOURCE]], %[[INDICES]] :
+//      CHECK:     %[[GENERIC:.+]] = linalg.generic
+// CHECK-SAME:         ins(%[[GATHER]] :
+//      CHECK:     flow.return %[[GENERIC]]
+//      CHECK:   util.return %[[DISPATCH]]

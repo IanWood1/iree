@@ -315,6 +315,21 @@ GatherOp::reifyResultShapes(OpBuilder &b,
       .reifyResultShapes(b, reifiedReturnShapes);
 }
 
+FailureOr<SmallVector<int64_t>> GatherOp::getStaticLoopRanges() {
+  return SmallVector<int64_t>(getOutputType().getRank());
+}
+
+SmallVector<AffineMap> GatherOp::getIndexingMapsForOperands() {
+  Builder builder(getContext());
+  return {AffineMap(nullptr), AffineMap(nullptr),
+          builder.getMultiDimIdentityMap(getOutputType().getRank())};
+}
+
+SmallVector<AffineMap> GatherOp::getIndexingMapsForResults() {
+  Builder builder(getContext());
+  return {builder.getMultiDimIdentityMap(getOutputType().getRank())};
+}
+
 //===----------------------------------------------------------------------===//
 // SortOp
 //===----------------------------------------------------------------------===//
