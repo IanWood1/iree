@@ -431,11 +431,44 @@ setIGEMMConvolutionLoweringConfig(IREE::GPU::TargetAttr target,
       workgroupSize, targetSubgroupSize, pipelineConfig);
 }
 
+/// Helper to identify contraction like operations for operand promotiong.
+static bool isNonMatvecContraction(Operation *op) {
+  auto linalgOp = dyn_cast<linalg::LinalgOp>(op);
+  if (!linalgOp) {
+    return false;
+  }
+  SmallVector<int64_t, 4> bounds = linalgOp.getStaticLoopRanges();
+  FailureOr<mlir::linalg::ContractionDimensions> contractionDims =
+      mlir::linalg::inferContractionDims(linalgOp);
+  if (failed(contractionDims)) {
+    return false;
+  }
+
+  if (contractionDims->k.size() < 1 || contractionDims->m.size() < 1 ||
+      contractionDims->n.size() < 1) {
+    return false;
+  }
+
+  auto getElementCount = [&](ArrayRef<unsigned> dims) {
+    int64_t acc = 1;
+    for (auto mDim : dims) {
+      int64_t size = bounds[mDim];
+      if (ShapedType::isDynamic(size)) {
+        return size;
+      }
+      acc *= size;
+    }
+    return acc;
+  };
+  return getElementCount(contractionDims->m) != 1 &&
+         getElementCount(contractionDims->n) != 1;
+}
+
 LogicalResult setMatmulLoweringConfig(IREE::GPU::TargetAttr target,
                                       mlir::FunctionOpInterface entryPoint,
                                       Operation *op) {
   auto linalgOp = dyn_cast<linalg::LinalgOp>(op);
-  if (!linalgOp || !linalg::isaContractionOpInterface(linalgOp)) {
+  if (!linalgOp || !isNonMatvecContraction(linalgOp)) {
     return failure();
   }
 
@@ -472,39 +505,6 @@ LogicalResult setMatmulLoweringConfig(IREE::GPU::TargetAttr target,
       entryPoint, op, loweringConfig,
       IREE::Codegen::DispatchLoweringPassPipeline::LLVMGPUTileAndFuse,
       workgroupSize, targetSubgroupSize, pipelineConfig);
-}
-
-/// Helper to identify contraction like operations for operand promotiong.
-static bool isNonMatvecContraction(Operation *op) {
-  auto linalgOp = dyn_cast<linalg::LinalgOp>(op);
-  if (!linalgOp) {
-    return false;
-  }
-  SmallVector<int64_t, 4> bounds = linalgOp.getStaticLoopRanges();
-  FailureOr<mlir::linalg::ContractionDimensions> contractionDims =
-      mlir::linalg::inferContractionDims(linalgOp);
-  if (failed(contractionDims)) {
-    return false;
-  }
-
-  if (contractionDims->k.size() < 1 || contractionDims->m.size() < 1 ||
-      contractionDims->n.size() < 1) {
-    return false;
-  }
-
-  auto getElementCount = [&](ArrayRef<unsigned> dims) {
-    int64_t acc = 1;
-    for (auto mDim : dims) {
-      int64_t size = bounds[mDim];
-      if (ShapedType::isDynamic(size)) {
-        return size;
-      }
-      acc *= size;
-    }
-    return acc;
-  };
-  return getElementCount(contractionDims->m) != 1 &&
-         getElementCount(contractionDims->n) != 1;
 }
 
 // To find the number of vector elements per work-item, find a
