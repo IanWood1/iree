@@ -1259,11 +1259,12 @@ LogicalResult WinogradOutputTransformOp::reifyResultShapes(
 void AttentionOp::build(OpBuilder &odsBuilder, OperationState &odsState,
                         TypeRange results, Value query, Value key, Value value,
                         Value scale, Value output, ArrayAttr indexingMaps,
-                        std::optional<Value> prob_output_scale, std::optional<Value> mask) {
+                        std::optional<Value> prob_output_scale,
+                        std::optional<Value> mask) {
   Value probOutputScaleIn = prob_output_scale.value_or(Value());
   Value maskIn = mask.value_or(Value());
-  build(odsBuilder, odsState, results, query, key, value, scale, probOutputScaleIn, maskIn, output,
-        indexingMaps, DictionaryAttr());
+  build(odsBuilder, odsState, results, query, key, value, scale,
+        probOutputScaleIn, maskIn, output, indexingMaps, DictionaryAttr());
 }
 
 LogicalResult AttentionOp::verify() {
@@ -1272,8 +1273,10 @@ LogicalResult AttentionOp::verify() {
   // Check if indexing maps can represent attention.
   SmallVector<AffineMap> indexingMaps = attnOp.getIndexingMapsArray();
   if (indexingMaps.size() != getOperation()->getNumOperands()) {
-    return attnOp->emitOpError("expected an indexing map for each operand. Got: ") <<
-		    indexingMaps.size() << " indexing maps and " << getOperation()->getNumOperands() << " operands";
+    return attnOp->emitOpError(
+               "expected an indexing map for each operand. Got: ")
+           << indexingMaps.size() << " indexing maps and "
+           << getOperation()->getNumOperands() << " operands";
   }
   FailureOr<AttentionOpDetail> maybeOpInfo = AttentionOpDetail::get(
       getQueryMap(), getKeyMap(), getValueMap(), getOutputMap());
@@ -1284,7 +1287,7 @@ LogicalResult AttentionOp::verify() {
   FloatType scaleElementType = dyn_cast<FloatType>(getScale().getType());
   if (!scaleElementType) {
     return attnOp->emitOpError("expected scale to be of floating point type");
-  }	
+  }
 
   // Check shape compatibility based on indexing maps.
   SmallVector<int64_t> shape(getIterationDomainRank());
@@ -1331,10 +1334,12 @@ LogicalResult AttentionOp::verify() {
     if (failed(checkShape("Mask", getMask().getType().getShape(), *maskMap)))
       return failure();
   }
-  
-  FloatType probOutputScaleElementType = dyn_cast<FloatType>(getProbOutputScale().getType());
+
+  FloatType probOutputScaleElementType =
+      dyn_cast<FloatType>(getProbOutputScale().getType());
   if (getProbOutputScale() && !probOutputScaleElementType) {
-    return attnOp->emitOpError("expected prob output scale to be of floating point type");
+    return attnOp->emitOpError(
+        "expected prob output scale to be of floating point type");
   }
 
   int expectedSymbols = getQueryMap().getNumInputs();
@@ -1443,12 +1448,12 @@ void OnlineAttentionOp::build(OpBuilder &odsBuilder, OperationState &odsState,
                               TypeRange results, Value query, Value key,
                               Value value, Value scale, Value output, Value max,
                               Value sum, ArrayAttr indexingMaps,
-			      std::optional<Value> probOutputScale,
+                              std::optional<Value> probOutputScale,
                               std::optional<Value> mask) {
   Value maskIn = mask.value_or(Value());
   Value probOutputScaleIn = probOutputScale.value_or(Value());
-  build(odsBuilder, odsState, results, query, key, value, probOutputScaleIn, maskIn, scale, output,
-        max, sum, indexingMaps, DictionaryAttr());
+  build(odsBuilder, odsState, results, query, key, value, probOutputScaleIn,
+        maskIn, scale, output, max, sum, indexingMaps, DictionaryAttr());
 }
 
 LogicalResult OnlineAttentionOp::verify() {
@@ -1559,7 +1564,10 @@ LogicalResult OnlineAttentionOp::verify() {
 }
 
 MutableOperandRange OnlineAttentionOp::getDpsInitsMutable() {
-  return MutableOperandRange(*this, /*numInputs=*/getMask() ? 5 : 4,
+  int maskCount = getMask() ? 1 : 0;
+  int probOutputScaleCount = getProbOutputScale() ? 1 : 0;
+  int count = 4 + maskCount + probOutputScaleCount;
+  return MutableOperandRange(*this, /*numInputs=*/count,
                              /*numInits=*/3);
 }
 

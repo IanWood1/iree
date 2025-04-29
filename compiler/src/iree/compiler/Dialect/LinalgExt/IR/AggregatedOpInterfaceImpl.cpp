@@ -306,7 +306,8 @@ static bool willBeContiguousSlice(OpFoldResult inputSize, OpFoldResult tileSize,
 //===----------------------------------------------------------------------===//
 
 Value computeQKAndElementwise(Location loc, OpBuilder &b, Value query,
-                              Value key, Value scale, std::optional<Value> mask, std::optional<Value> prob_output_scale,
+                              Value key, Value scale, std::optional<Value> mask,
+                              std::optional<Value> prob_output_scale,
                               AffineMap qMap, AffineMap kMap, AffineMap sMap,
                               std::optional<AffineMap> maskMap,
                               SmallVector<OpFoldResult> iterationDomain,
@@ -379,7 +380,7 @@ Value computeQKAndElementwise(Location loc, OpBuilder &b, Value query,
       auto fpTy = cast<FloatType>(qETy);
       double mx =
           APFloat::getLargest(fpTy.getFloatSemantics(), /*Negative=*/false)
-             .convertToDouble();
+              .convertToDouble();
       Value offset = b.create<arith::ConstantOp>(
           loc, b.getFloatAttr(sElementType, clAttentionSoftmaxMax / mx));
       s = elementwiseValueInPlace<arith::AddFOp>(b, loc, sMap, scaleMap, s,
@@ -436,9 +437,9 @@ FailureOr<SmallVector<Value>> AttentionOp::decomposeOperation(OpBuilder &b) {
   Type f32Type = b.getF32Type();
 
   // ---- QK Matmul + elementwise math ----
-  Value s = computeQKAndElementwise(loc, b, query, key, getScale(), mask, getProbOutputScale(), qMap,
-                                    kMap, sMap, getMaskMap(), sizes, f32Type,
-                                    getRegion(), qkAttrs, lowPrecision);
+  Value s = computeQKAndElementwise(
+      loc, b, query, key, getScale(), mask, getProbOutputScale(), qMap, kMap,
+      sMap, getMaskMap(), sizes, f32Type, getRegion(), qkAttrs, lowPrecision);
 
   // ---- Softmax ----
 
@@ -551,9 +552,10 @@ OnlineAttentionOp::decomposeOperation(OpBuilder &b) {
   bool lowPrecision = qETy.getIntOrFloatBitWidth() <= 8;
 
   // ---- QK Matmul + elementwise math ----
-  Value s = computeQKAndElementwise(
-      loc, b, query, key, getScale(), mask, nullptr, qMap, kMap, sMap, getMaskMap(),
-      sizes, elementType, getRegion(), qkAttrs, lowPrecision);
+  Value s = computeQKAndElementwise(loc, b, query, key, getScale(), mask,
+                                    getProbOutputScale(), qMap, kMap, sMap,
+                                    getMaskMap(), sizes, elementType,
+                                    getRegion(), qkAttrs, lowPrecision);
 
   // TODO: This decomposition should be in a seperate op called
   // "online softmax".
