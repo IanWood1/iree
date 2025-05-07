@@ -126,6 +126,8 @@ void GenericVectorizationPass::runOnOperation() {
     } else if (enableVectorMasking &&
                isa<linalg::PackOp, linalg::UnPackOp>(op)) {
       candidates.push_back(op);
+    } else if (isa<IREE::LinalgExt::GatherOp>(op)) {
+      candidates.push_back(op);
     }
   });
 
@@ -164,6 +166,10 @@ void GenericVectorizationPass::runOnOperation() {
     if (isa<linalg::GenericOp>(op) && vectorizeToTransferGather) {
       (void)IREE::VectorExt::vectorizeGatherLikeGenericToTransferGather(
           rewriter, cast<linalg::GenericOp>(op), vectorSizes, scalableVecDims,
+          vectorizeGatherAccesses);
+    } else if (auto gatherOp = dyn_cast<IREE::LinalgExt::GatherOp>(op)) {
+      (void)IREE::VectorExt::vectorizeLinalgExtGatherToTransferGather(
+          rewriter, gatherOp, vectorSizes, scalableVecDims,
           vectorizeGatherAccesses);
     } else {
       (void)linalg::vectorize(rewriter, op, vectorSizes, scalableVecDims,

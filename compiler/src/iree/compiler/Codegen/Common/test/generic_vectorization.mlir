@@ -703,3 +703,27 @@ func.func @multi_extract(%storage : !storage, %storage2: !storage, %ind0: !ind0,
 
 // CHECK-GATHER-LABEL: @multi_extract
 // CHECK-GATHER-COUNT-2: transfer_gather
+
+// -----
+
+func.func @linalg_ext_gather(%source : tensor<1024x128xi32>, %indices : tensor<10xi32>) -> (tensor<10x128xi32>) {
+  %cst = arith.constant 2 : i32
+  %empty = tensor.empty() : tensor<10x128xi32>
+  %result = iree_linalg_ext.gather dimension_map = [0]
+                          ins(%source, %indices : tensor<1024x128xi32>, tensor<10xi32>)
+                          outs(%empty: tensor<10x128xi32>) {
+                    ^bb0(%arg0: i32, %arg1: i32):
+                      %0 = arith.muli %arg0, %cst : i32
+                      iree_linalg_ext.yield %0 : i32
+  } -> tensor<10x128xi32>
+  return %result : tensor<10x128xi32>
+}
+
+// CHECK-LABEL: @linalg_ext_gather
+//  CHECK-SAME:    %[[ARG0:[a-zA-Z0-9]+]]
+//  CHECK-SAME:    %[[ARG1:[a-zA-Z0-9]+]]
+//       CHECK:   %[[C0:.+]] = arith.constant 0 : index
+//       CHECK:   %[[READ:.+]] = vector.transfer_read %[[ARG1]] 
+//  CHECK-SAME:     : tensor<10xi32>, vector<10xindex>
+//       CHECK:   %[[GATHER:.+]] = iree_vector_ext.transfer_gather %[[ARG0]]
+//  CHECK-SAME:     [%[[C0]], %[[C0]]][%[[READ]]: vector<10xindex>, None]

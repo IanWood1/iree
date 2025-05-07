@@ -6,6 +6,7 @@
 
 #include "iree/compiler/Codegen/Dialect/VectorExt/IR/VectorExtDialect.h"
 #include "iree/compiler/Codegen/Dialect/VectorExt/Transforms/Passes.h"
+#include "iree/compiler/Dialect/LinalgExt/IR/LinalgExtOps.h"
 #include "iree/compiler/Dialect/LinalgExt/Utils/Utils.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
@@ -487,6 +488,66 @@ LogicalResult vectorizeGatherLikeGenericToTransferGather(
     return failure();
   }
 
+  return success();
+}
+
+// TODO: fix `vectorSizes`, `scalableVecDims`, and `vectorizeNDExtract`
+LogicalResult vectorizeLinalgExtGatherToTransferGather(
+    RewriterBase &rewriter, IREE::LinalgExt::GatherOp gatherOp,
+    ArrayRef<int64_t> vectorSizes, ArrayRef<bool> scalableVecDims,
+    bool vectorizeNDExtract) {
+
+  // TODO: need to split the innermost dim of `indices` into `indexDepth`
+  // vectors so that each independent index can be passed to the
+  // iree_vector_ext.transfer_gather op.
+  if (gatherOp.getIndexDepth() != 1) {
+    return failure();
+  }
+
+  RewriterBase::InsertionGuard g(rewriter);
+  rewriter.setInsertionPoint(gatherOp);
+  MLIRContext *context = rewriter.getContext();
+
+  auto loc = gatherOp.getLoc();
+  Value zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+
+  auto indicesTy = gatherOp.getIndicesType();
+  auto gatherTy = gatherOp.getOutputType();
+  auto sourceTy = gatherOp.getSourceType();
+
+  auto gatherVectorTy =
+      VectorType::get(gatherTy.getShape(), gatherTy.getElementType());
+  VectorType readTy =
+      VectorType::get(indicesTy.getShape(), rewriter.getIndexType());
+  auto read = rewriter.create<vector::TransferReadOp>(
+      loc, readTy, gatherOp.getIndices(),
+      SmallVector<Value>(indicesTy.getRank(), zero));
+
+  SmallVector<Value> baseIndices(gatherTy.getRank(), zero);
+  SmallVector<bool> indexed(gatherTy.getRank(), false);
+  indexed[0] = true;
+  auto inBounds =
+      rewriter.getBoolArrayAttr(SmallVector<bool>(gatherTy.getRank(), true));
+  AffineExpr d0;
+  bindDims(context, d0);
+  SmallVector<AffineMap> indexedMaps(
+      1, AffineMap::get(sourceTy.getRank(), 0, {d0}, context));
+  Value padding = rewriter.create<arith::ConstantOp>(
+      loc, rewriter.getZeroAttr(gatherTy.getElementType()));
+
+  auto transferGatherOp = rewriter.create<IREE::VectorExt::TransferGatherOp>(
+      loc, gatherVectorTy, gatherOp.getSource(), baseIndices, ValueRange{read},
+      rewriter.getBoolArrayAttr(indexed),
+      rewriter.getAffineMapArrayAttr(indexedMaps),
+      rewriter.getMultiDimIdentityMap(gatherTy.getRank()), padding,
+      /*mask=*/Value(), inBounds);
+
+  auto emptyOp = rewriter.create<tensor::EmptyOp>(loc, gatherTy.getShape(),
+                                                  gatherTy.getElementType());
+  SmallVector<Value> writeIndices(gatherTy.getRank(), zero);
+  auto writeOp = rewriter.create<vector::TransferWriteOp>(
+      loc, transferGatherOp.getResult(), emptyOp, writeIndices);
+  rewriter.replaceOp(gatherOp, writeOp);
   return success();
 }
 
