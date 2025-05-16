@@ -677,3 +677,21 @@ util.func public @scatter_collapse_noop(%arg0: tensor<10xf16>, %arg1: tensor<10x
 //  CHECK-SAME:       outs(%[[ARG2]]
 //       CHECK:   %[[EXPANDED:.+]] = tensor.expand_shape %[[SCATTER]]
 //       CHECK:   util.return %[[EXPANDED]]
+
+// -----
+
+util.func public @gather(%arg0: tensor<100x128xf16>, %arg1: tensor<10xi32>, %arg2: tensor<10x4x32xf16>) -> tensor<10x4x32xf16> {
+  %c0 = arith.constant 0 : index
+  %expanded = tensor.expand_shape %arg0 [[0], [1, 2]] output_shape[100, 4, 32] : tensor<100x128xf16> into tensor<100x4x32xf16>
+  %0 = iree_linalg_ext.gather dimension_map = [0] ins(%expanded, %arg1 : tensor<100x4x32xf16>, tensor<10xi32>) outs(%arg2 : tensor<10x4x32xf16>) -> tensor<10x4x32xf16>
+  util.return %0 : tensor<10x4x32xf16>
+}
+// CHECK-LABEL: util.func public @scatter_collapse_noop
+//  CHECK-SAME:     %[[ARG0:[a-zA-Z0-9]+]]:
+//  CHECK-SAME:     %[[ARG1:[a-zA-Z0-9]+]]:
+//  CHECK-SAME:     %[[ARG2:[a-zA-Z0-9]+]]:
+//       CHECK:   %[[SCATTER:.+]] = iree_linalg_ext.scatter
+//  CHECK-SAME:       ins(%[[ARG0]], %[[ARG1]]
+//  CHECK-SAME:       outs(%[[ARG2]]
+//       CHECK:   %[[EXPANDED:.+]] = tensor.expand_shape %[[SCATTER]]
+//       CHECK:   util.return %[[EXPANDED]]

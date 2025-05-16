@@ -347,6 +347,11 @@ getScatterReshapeInfo(LinalgExt::ScatterOp scatterOp) {
   return infos;
 };
 
+static SmallVector<ReshapeOperandInfo>
+getGatherReshapeInfo(LinalgExt::ScatterOp scatterOp) {
+  return {};
+}
+
 static AffineMap
 getIndexingMapInExpandedOp(OpBuilder &builder, AffineMap indexingMap,
                            const ExpansionInfo &expansionInfo) {
@@ -522,6 +527,60 @@ fuseScatterWithReshapeByExpansion(ScatterOp scatterOp, Operation *reshapeOp,
   }
   auto newCollapse = rewriter.create<tensor::CollapseShapeOp>(
       loc, scatterOp.getOriginalType(), newScatter.getResult(0),
+      originalReassoc);
+
+  return {newCollapse};
+}
+
+static std::optional<Value>
+fuseGatherWithReshapeByExpansion(GatherOp gatherOp, Operation *reshapeOp,
+                                 OpOperand *fusableOpOperand,
+                                 PatternRewriter &rewriter) {
+  Location loc = gatherOp.getLoc();
+  // Check if reshape is expanding or collapsing.
+  auto expandingReshapeOp = dyn_cast<tensor::ExpandShapeOp>(*reshapeOp);
+  auto collapsingReshapeOp = dyn_cast<tensor::CollapseShapeOp>(*reshapeOp);
+  bool isExpanding = (expandingReshapeOp != nullptr);
+  RankedTensorType expandedType = isExpanding
+                                      ? expandingReshapeOp.getResultType()
+                                      : collapsingReshapeOp.getSrcType();
+  ExpansionInfo info;
+  if (failed(info.compute(
+          getGatherReshapeInfo(gatherOp),
+          gatherOp.getStaticLoopRanges().value(), fusableOpOperand,
+          isExpanding ? expandingReshapeOp.getReassociationIndices()
+                      : collapsingReshapeOp.getReassociationIndices(),
+          expandedType.getShape()))) {
+    return std::nullopt;
+  }
+
+  OpBuilder::InsertionGuard g(rewriter);
+  rewriter.setInsertionPoint(gatherOp);
+
+  OpOperand *update = gatherOp.getDpsInputOperand(0);
+  OpOperand *indices = gatherOp.getDpsInputOperand(1);
+  OpOperand *original = gatherOp.getDpsInitOperand(0);
+  auto newUpdates = info.getOrCreateExpanded(loc, update, rewriter).value();
+  auto newIndices = info.getOrCreateExpanded(loc, indices, rewriter).value();
+  auto newOriginal = info.getOrCreateExpanded(loc, original, rewriter).value();
+
+  auto newScatter = rewriter.create<ScatterOp>(
+      loc, newOriginal.getType(), ValueRange{newUpdates, newIndices},
+      ValueRange{newOriginal}, gatherOp.getDimensionMap(),
+      gatherOp.getUniqueIndices());
+  rewriter.inlineRegionBefore(gatherOp.getRegion(), newScatter.getRegion(),
+                              newScatter.getRegion().begin());
+
+  auto originalShapeMap = info.getShapeMap(original);
+  SmallVector<ReassociationIndices> originalReassoc =
+      computeReassocFromShapeMap(originalShapeMap);
+
+  // Collapse back to original shape.
+  if (isIdentityReassoc(originalReassoc)) {
+    return {newScatter.getResult(0)};
+  }
+  auto newCollapse = rewriter.create<tensor::CollapseShapeOp>(
+      loc, gatherOp.getOriginalType(), newScatter.getResult(0),
       originalReassoc);
 
   return {newCollapse};
@@ -715,6 +774,37 @@ struct FoldScatterWithConsumerReshapeByExpansion final
       return failure();
     rewriter.replaceOp(scatterOp, *replacementValue);
     return success();
+  }
+
+  linalg::ControlFusionFn controlFoldingReshapes;
+};
+
+struct FoldGatherWithProducerReshapeByExpansion final
+    : public OpRewritePattern<GatherOp> {
+  FoldGatherWithProducerReshapeByExpansion(
+      MLIRContext *context, linalg::ControlFusionFn controlFoldingReshapes,
+      PatternBenefit benefit = 1)
+      : OpRewritePattern<GatherOp>(context, benefit),
+        controlFoldingReshapes(std::move(controlFoldingReshapes)) {}
+
+  LogicalResult matchAndRewrite(GatherOp gatherOp,
+                                PatternRewriter &rewriter) const override {
+    for (OpOperand &opOperand : gatherOp->getOpOperands()) {
+      tensor::CollapseShapeOp reshapeOp =
+          opOperand.get().getDefiningOp<tensor::CollapseShapeOp>();
+      if (!reshapeOp)
+        continue;
+      if (!controlFoldingReshapes(&opOperand))
+        continue;
+
+      std::optional<Value> replacementValue = fuseScatterWithReshapeByExpansion(
+          gatherOp, reshapeOp, &opOperand, rewriter);
+      if (!replacementValue)
+        return failure();
+      rewriter.replaceOp(gatherOp, *replacementValue);
+      return success();
+    }
+    return failure();
   }
 
   linalg::ControlFusionFn controlFoldingReshapes;
@@ -937,6 +1027,8 @@ void populateFoldReshapeOpsByExpansionPatterns(
   patterns.add<FoldScatterWithProducerReshapeByExpansion>(
       patterns.getContext(), controlFoldingReshapes);
   patterns.add<FoldScatterWithConsumerReshapeByExpansion>(
+      patterns.getContext(), controlFoldingReshapes);
+  patterns.add<FoldGatherWithProducerReshapeByExpansion>(
       patterns.getContext(), controlFoldingReshapes);
 }
 
