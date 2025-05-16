@@ -94,4 +94,9 @@ def ConvertAttentionToOnlineAttentionPass :
   let summary = "Converts attention op to online_attention op";
 }
 
+def TestReshapeFusionPass :
+    Pass<"iree-linalg-ext-test-reshape-fusion", ""> {
+  let summary = "Test reshape fusion patterns";
+}
+
 #endif  // IREE_DIALECT_LINALGEXT_PASSES

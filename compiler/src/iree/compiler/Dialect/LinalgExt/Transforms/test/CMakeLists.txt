@@ -22,6 +22,7 @@ iree_lit_test_suite(
     "decompose_winograd.mlir"
     "distribution.mlir"
     "pad_contraction_to_block_size.mlir"
+    "reshape_fusion.mlir"
     "split_reduction.mlir"
     "tiling.mlir"
   TOOLS
