@@ -15,25 +15,9 @@ namespace mlir::iree_compiler::IREE::Codegen {
 
 using IREE::TensorExt::DispatchTensorType;
 
-struct EncodingNopHostEncodingLayoutResolverAttrInterface final
-    : IREE::Encoding::EncodingLayoutResolverAttrInterface::ExternalModel<
-          EncodingNopHostEncodingLayoutResolverAttrInterface,
-          EncodingNopLayoutAttr> {
-  Attribute cloneWithSimplifiedConfig(Attribute attr,
-                                      DictionaryAttr config) const {
-    return attr;
-  }
-
-  Attribute getLayout(Attribute attr, RankedTensorType type) const {
-    return attr;
-  }
-};
-
-struct EncodingNopHostSerializableEncodingAttrInterface final
-    : IREE::Encoding::SerializableEncodingAttrInterface::ExternalModel<
-          EncodingNopHostSerializableEncodingAttrInterface,
-          EncodingNopLayoutAttr> {
-public:
+struct EncodingNopDeviceLayoutAttrInterface final
+    : IREE::Encoding::LayoutAttrInterface::ExternalModel<
+          EncodingNopDeviceLayoutAttrInterface, EncodingNopLayoutAttr> {
   Type convertType(Attribute attr, Type type) const {
     return TypeSwitch<Type, Type>(type)
         .Case<RankedTensorType>([&](auto rankedTensorType) {
@@ -51,6 +35,46 @@ public:
         })
         .Default([&](auto concreteType) { return concreteType; });
   }
+
+  LogicalResult getOffsetsSizesStrides(
+      Attribute attr, OpBuilder &builder, Location loc,
+      IREE::TensorExt::DispatchTensorType type, ValueRange dynamicDims,
+      ArrayRef<OpFoldResult> offsets, ArrayRef<OpFoldResult> sizes,
+      ArrayRef<OpFoldResult> strides, SmallVectorImpl<OpFoldResult> &newOffsets,
+      SmallVectorImpl<OpFoldResult> &newSizes,
+      SmallVectorImpl<OpFoldResult> &newStrides) const {
+    // Only handle cases where the slice spans the whole
+    // `!iree_tensor_ext.dispatch.tensor` type.
+    // TODO(jornt): Enable partial slices.
+    if (!type.doesSliceSpanWholeTensor(dynamicDims, offsets, sizes, strides)) {
+      return failure();
+    }
+    auto boundTensorType = cast<RankedTensorType>(type.getBoundType());
+    newSizes = getMixedValues(boundTensorType.getShape(), dynamicDims, builder);
+    newOffsets.resize(newSizes.size(), builder.getIndexAttr(0));
+    newStrides.resize(newSizes.size(), builder.getIndexAttr(1));
+    return success();
+  }
+
+  Operation *lowerOp(Attribute attr, OpBuilder &b, Operation *op,
+                     TypeRange convertedResTypes,
+                     ValueRange convertedOperands) const {
+    return clone(b, op, convertedResTypes, convertedOperands);
+  }
+};
+
+struct EncodingNopHostEncodingLayoutResolverAttrInterface final
+    : IREE::Encoding::EncodingLayoutResolverAttrInterface::ExternalModel<
+          EncodingNopHostEncodingLayoutResolverAttrInterface,
+          EncodingNopLayoutAttr> {
+  Attribute cloneWithSimplifiedConfig(Attribute attr,
+                                      DictionaryAttr config) const {
+    return attr;
+  }
+
+  Attribute getLayout(Attribute attr, RankedTensorType type) const {
+    return attr;
+  }
 };
 
 void registerCodegenExternalModels(DialectRegistry &registry) {
@@ -58,7 +82,7 @@ void registerCodegenExternalModels(DialectRegistry &registry) {
       +[](MLIRContext *ctx, IREE::Codegen::IREECodegenDialect *dialect) {
         EncodingNopLayoutAttr::attachInterface<
             EncodingNopHostEncodingLayoutResolverAttrInterface,
-            EncodingNopHostSerializableEncodingAttrInterface>(*ctx);
+            EncodingNopDeviceLayoutAttrInterface>(*ctx);
       });
 }
 

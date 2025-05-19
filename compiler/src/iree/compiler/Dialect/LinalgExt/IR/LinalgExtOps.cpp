@@ -231,8 +231,24 @@ verifyGatherScatter(OpTy op, int64_t sliceRank, ShapedType originalType,
     }
   }
 
-  Region &region = op.getRegion();
-  Block *body = &region.front();
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ScatterOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult ScatterOp::verify() {
+  ShapedType originalType = getOriginalType();
+  ShapedType updateType = getUpdateType();
+  ScatterOp op = *this;
+
+  if (failed(verifyGatherScatter(op, getUpdateSliceRank(), originalType,
+                                 updateType, "original", "update"))) {
+    return failure();
+  }
+
+  Block *body = &getRegion().front();
   if (body->getNumArguments() != 2) {
     return op->emitOpError("expected region to have two arguments");
   }
@@ -245,12 +261,12 @@ verifyGatherScatter(OpTy op, int64_t sliceRank, ShapedType originalType,
   }
   if (arg0Type != updateType.getElementType()) {
     return op->emitOpError("mismatch in argument 0 of region ")
-           << arg0Type << " and element type of " + updateName + " value "
+           << arg0Type << " and element type of update value "
            << updateType.getElementType();
   }
   if (arg1Type != originalType.getElementType()) {
     return op->emitOpError("mismatch in argument 1 of region ")
-           << arg1Type << " and element type of " + originalName + " value "
+           << arg1Type << " and element type of original value "
            << originalType.getElementType();
   }
   if (arg0Type != arg1Type) {
@@ -266,16 +282,8 @@ verifyGatherScatter(OpTy op, int64_t sliceRank, ShapedType originalType,
     return yieldOp.emitOpError("mismatch in type of yielded value ")
            << yieldedType << " and argument of the region " << arg0Type;
   }
+
   return success();
-}
-
-//===----------------------------------------------------------------------===//
-// ScatterOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult ScatterOp::verify() {
-  return verifyGatherScatter(*this, getUpdateSliceRank(), getOriginalType(),
-                             getUpdateType(), "original", "update");
 }
 
 LogicalResult
@@ -505,6 +513,92 @@ SortOp::reifyResultShapes(OpBuilder &b,
                           ReifiedRankedShapedTypeDims &reifiedReturnShapes) {
   return cast<LinalgExtOp>(getOperation())
       .reifyResultShapes(b, reifiedReturnShapes);
+}
+
+namespace {
+
+/// This pattern removes unused results from SortOp. The SortOp uses the
+/// Destination Passing Style interface so it's results are tied to it's
+/// operands as well as it's comparitor block arguments. So, to remove unused
+/// results we must also remove the associated operands and block arguments.
+///
+/// For example:
+///
+/// %0:2 = iree_linalg_ext.sort dimension(1) outs(%arg0, %arg1:
+/// tensor<?x10xf32>, tensor<?x10xi64>) {
+///   ^bb0(%arg2: f32, %arg3: f32, %arg4: i64, %arg5: i64):
+///    %42 = arith.cmpf oge, %arg2, %arg3 : f32
+///    iree_linalg_ext.yield %42 : i1
+/// } -> tensor<?x10xf32>, tensor<?x10xi64>
+///
+/// ->
+///
+/// %0 = iree_linalg_ext.sort dimension(1) outs(%arg0: tensor<?x10xf32>) {
+///   ^bb0(%arg2: f32, %arg3: f32):
+///    %42 = arith.cmpf oge, %arg2, %arg3 : f32
+///    iree_linalg_ext.yield %42 : i1
+/// } -> tensor<?x10xf32>
+///
+/// Note: that we will not remove unused results if their associated block
+/// arguments are used within the comparitor because that's needed for op
+/// functionality.
+struct RemoveUnusedSortOpResults
+    : public OpRewritePattern<IREE::LinalgExt::SortOp> {
+  using OpRewritePattern::OpRewritePattern;
+  LogicalResult matchAndRewrite(IREE::LinalgExt::SortOp sortOp,
+                                PatternRewriter &rewriter) const override {
+    // To avoid problems in dispatches associated with unused results, prune
+    // them here.
+    Location loc = sortOp->getLoc();
+    auto operands = sortOp.getOutputs();
+    auto results = sortOp.getResults();
+    unsigned numRes = sortOp.getNumResults();
+
+    // # TODO(#20831): Implement a way to remove unused results when using
+    // buffer semantics.
+    if (numRes == 0) {
+      return failure();
+    }
+
+    Block &block = sortOp.getRegion().front();
+    auto blockArgs = block.getArguments();
+    SmallVector<Value> usedBlockArgs, usedOperands, usedResults;
+    SmallVector<Type> usedResultTypes;
+    BitVector eraseArg(numRes * 2, false);
+    for (auto idx : llvm::seq<unsigned>(numRes)) {
+      // If result or associated block arg is used, do not erase.
+      if (!results[idx].use_empty() || !blockArgs[2 * idx].use_empty() ||
+          !blockArgs[2 * idx + 1].use_empty()) {
+        usedOperands.push_back(operands[idx]);
+        usedResults.push_back(results[idx]);
+        usedResultTypes.push_back(results[idx].getType());
+        continue;
+      }
+      eraseArg.set(2 * idx, 2 * idx + 2);
+    }
+
+    // Bail out if no pruning required.
+    if (eraseArg.none()) {
+      return failure();
+    }
+
+    // Create new op using only operands associated to used results or block
+    // args.
+    auto newSortOp = rewriter.create<IREE::LinalgExt::SortOp>(
+        loc, usedResultTypes,
+        /*inputs=*/ValueRange{}, usedOperands, sortOp.getDimension());
+    newSortOp.getRegion().takeBody(sortOp.getRegion());
+    newSortOp.getRegion().front().eraseArguments(eraseArg);
+    rewriter.replaceAllUsesWith(usedResults, newSortOp.getResults());
+    rewriter.eraseOp(sortOp);
+    return success();
+  }
+};
+} // namespace
+
+void SortOp::getCanonicalizationPatterns(RewritePatternSet &results,
+                                         MLIRContext *ctx) {
+  results.add<RemoveUnusedSortOpResults>(ctx);
 }
 
 //===----------------------------------------------------------------------===//

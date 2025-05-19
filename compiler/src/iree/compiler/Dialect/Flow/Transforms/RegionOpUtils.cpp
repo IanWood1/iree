@@ -6,6 +6,7 @@
 
 #include "iree/compiler/Dialect/Flow/Transforms/RegionOpUtils.h"
 
+#include "iree/compiler/Dialect/Encoding/IR/EncodingDialect.h"
 #include "iree/compiler/Dialect/Encoding/IR/EncodingOps.h"
 #include "iree/compiler/Dialect/Flow/IR/FlowOps.h"
 #include "iree/compiler/Dialect/LinalgExt/IR/LinalgExtOps.h"
@@ -43,12 +44,6 @@ static llvm::cl::opt<int> clInlineConstantByteLength(
     llvm::cl::desc("Maximum byte-length of tensor constant that can be inlined "
                    "into a dispatch region or 0 to disable inlining."),
     llvm::cl::init(256));
-
-// TODO(#18457, #18447): Remove once backends support gather fusion.
-static llvm::cl::opt<bool>
-    clEnableGatherFusion("iree-flow-enable-gather-fusion",
-                         llvm::cl::desc("Fuse gather-like ops with consumer."),
-                         llvm::cl::init(false));
 
 namespace mlir::iree_compiler::IREE::Flow {
 
@@ -797,6 +792,27 @@ FailureOr<Operation *> hoistOutOfDispatch(RewriterBase &rewriter,
 // Utilities to make a dispatch region isolated from above
 //===---------------------------------------------------------------------===//
 
+// White list of operations we could ever want to clone. All clonable operations
+// must be part of this white list before any other consideration. Any operation
+// that returns `true` here is never cloned.
+static bool isUnclonableOp(Operation *op) {
+  if (!op) {
+    return true;
+  }
+  if (!isa<affine::AffineDialect, arith::ArithDialect, complex::ComplexDialect,
+           IREE::Encoding::IREEEncodingDialect,
+           IREE::LinalgExt::IREELinalgExtDialect, linalg::LinalgDialect,
+           tensor::TensorDialect>(op->getDialect())) {
+    return true;
+  }
+
+  // Dont clone the following ops into its consumers.
+  if (isa<tensor::InsertSliceOp>(op)) {
+    return true;
+  }
+  return false;
+}
+
 static bool isAttentionMaskGenerator(Operation *op) {
   for (OpOperand &use : op->getUses()) {
     if (auto attention =
@@ -827,7 +843,7 @@ static bool isScatterIndicesGenerator(Operation *op) {
 /// operations as roots.
 bool isClonableIntoDispatchOp(Operation *op,
                               ClonableIntoDispatchOptions options) {
-  if (isa<Flow::FlowDialect>(op->getDialect())) {
+  if (isUnclonableOp(op)) {
     return false;
   }
 
@@ -842,9 +858,7 @@ bool isClonableIntoDispatchOp(Operation *op,
   if (LinalgExt::isBitExtendOp(op)) {
     return true;
   }
-  if (clEnableGatherFusion && LinalgExt::isGatherlikeOp(op)) {
-    return true;
-  }
+
   // If the operation is used for masking an AttentionOp, then we always
   // clone it. The Attention mask is usually big, and is always generated
   // from a small tensor, so it's always good to clone it.
@@ -855,6 +869,10 @@ bool isClonableIntoDispatchOp(Operation *op,
   // If the operation is used for the indices computation of a scatter op, it
   // should be cloned into the dispatch.
   if (options.aggressive && isScatterIndicesGenerator(op)) {
+    return true;
+  }
+
+  if (isa<IREE::LinalgExt::GatherOp>(op)) {
     return true;
   }
 

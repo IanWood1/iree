@@ -1137,10 +1137,10 @@ iree_hal_module_debug_sink_t HalModuleDebugSink::AsIreeHalModuleDebugSink()
     const {
   iree_hal_module_debug_sink_t res;
   memset(&res, 0, sizeof(res));
+  res.release.fn = HalModuleDebugSink::ReleaseCallback;
+  res.release.user_data = const_cast<HalModuleDebugSink*>(this);
   res.buffer_view_trace.fn = HalModuleDebugSink::IreeHalModuleBufferViewTrace;
   res.buffer_view_trace.user_data = const_cast<HalModuleDebugSink*>(this);
-  res.destroy.fn = HalModuleDebugSink::DestroyCallback;
-  res.destroy.user_data = const_cast<HalModuleDebugSink*>(this);
   return res;
 }
 
@@ -1161,11 +1161,10 @@ static std::vector<HalBufferView> CreateHalBufferViewVector(
   return res;
 }
 
-iree_status_t HalModuleDebugSink::DestroyCallback(void* user_data) {
+void HalModuleDebugSink::ReleaseCallback(void* user_data) {
   HalModuleDebugSink* debug_sink =
       reinterpret_cast<HalModuleDebugSink*>(user_data);
   debug_sink->dec_ref();
-  return iree_ok_status();
 }
 
 iree_status_t HalModuleDebugSink::IreeHalModuleBufferViewTrace(
@@ -1363,6 +1362,7 @@ void SetupHalBindings(nanobind::module_ m) {
       .value("FLOAT_8_E4M3_FNUZ", IREE_HAL_ELEMENT_TYPE_FLOAT_8_E4M3_FNUZ)
       .value("FLOAT_8_E5M2", IREE_HAL_ELEMENT_TYPE_FLOAT_8_E5M2)
       .value("FLOAT_8_E5M2_FNUZ", IREE_HAL_ELEMENT_TYPE_FLOAT_8_E5M2_FNUZ)
+      .value("FLOAT_8_E8M0_FNU", IREE_HAL_ELEMENT_TYPE_FLOAT_8_E8M0_FNU)
       .export_values()
       .def("__int__",
            [](enum iree_hal_element_types_t self) { return (uint64_t)self; });

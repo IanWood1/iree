@@ -129,11 +129,13 @@ def IREECodegen_LoweringConfigAttrInterface :
   ];
 }
 
-def IREECodegen_LayoutAttrInterface :
-  AttrInterface<"LayoutAttrInterface"> {
+def IREECodegen_PackedLayoutAttrInterface :
+  AttrInterface<"PackedLayoutAttrInterface"> {
   let cppNamespace = "::mlir::iree_compiler::IREE::Codegen";
   let description = [{
-    An interface that collects a set of methods for encoding materialization.
+    An interface that collects a set of methods for packed encoding materialization.
+    This helps generalizing materialization for encodings that perform some kind of
+    packing and/or swizzling.
   }];
 
   let methods = [
@@ -148,22 +150,6 @@ def IREECodegen_LayoutAttrInterface :
       /*defaultImplementation=*/[{
         assert(false && "unimplemented interface method");
         return MaterializeEncodingInfo{};
-      }]
-    >,
-    InterfaceMethod<
-      /*desc=*/[{
-        Returns the layout of materialized encoding for a tensor type.
-      }],
-      /*retTy=*/"::mlir::Operation *",
-      /*methodName=*/"lowerOp",
-      /*args=*/(ins "::mlir::OpBuilder &":$b,
-                    "::mlir::Operation *":$op,
-                    "::mlir::TypeRange":$convertedResTypes,
-                    "::mlir::ValueRange":$convertedOperands),
-      /*methodBody=*/"",
-      /*defaultImplementation=*/[{
-        assert(false && "unimplemented interface method");
-        return nullptr;
       }]
     >
   ];

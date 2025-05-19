@@ -5,8 +5,15 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //===- CPUEncodingExternalModels.cpp --------------------------------------===//
 //
-// This file implements the IREE::Codegen::LayoutAttrInterface for CPU backends
-// and the VMVX backend. In these backends, we transpose narrow-N into narrow-M
+// This file implements the following interfaces for CPU backends and the VMVX
+// backend:
+//
+// - IREE::Encoding::EncodingLayoutResolverAttrInterface
+// - IREE::Encoding::SerializableEncodingAttrInterface
+// - IREE::Encoding::LayoutAttrInterface
+// - IREE::Encoding::PackedLayoutAttrInterface
+//
+// In these backends, we transpose narrow-N into narrow-M
 // for a combination of reasons:
 //
 //   1. As linalg.matmul materializes into linalg.mmt4d, which has a transposed
@@ -31,7 +38,6 @@
 #include "iree/compiler/Codegen/ExternalInterfaces/CPUEncodingExternalModels.h"
 
 #include "iree/compiler/Codegen/Dialect/CPU/IR/IREECPUTypes.h"
-#include "iree/compiler/Codegen/Dialect/Codegen/IR/IREECodegenInterfaces.h"
 #include "iree/compiler/Codegen/Dialect/Codegen/IR/IREECodegenTypes.h"
 #include "iree/compiler/Codegen/Dialect/Codegen/Utils/Utils.h"
 #include "iree/compiler/Codegen/ExternalInterfaces/Utils.h"
@@ -245,7 +251,7 @@ TileMxNxK chooseMatmulTile(ArrayRef<TileMxNxK> enumeratedTiles,
 FailureOr<Operation *>
 lowerContractionOpWithEncoding(OpBuilder &builder, linalg::LinalgOp linalgOp,
                                ValueRange operands,
-                               IREE::Codegen::LayoutAttrInterface layoutAttr) {
+                               IREE::Encoding::LayoutAttrInterface layoutAttr) {
   if (!linalgOp.hasPureTensorSemantics()) {
     return failure();
   }
@@ -270,8 +276,12 @@ lowerContractionOpWithEncoding(OpBuilder &builder, linalg::LinalgOp linalgOp,
     return failure();
   }
 
-  MaterializeEncodingInfo encodingInfo = layoutAttr.getEncodingInfo(
-      cast<RankedTensorType>(linalgOp->getResultTypes()[0]));
+  MaterializeEncodingInfo encodingInfo = {};
+  if (auto packedLayoutAttr =
+          dyn_cast<IREE::Codegen::PackedLayoutAttrInterface>(layoutAttr)) {
+    encodingInfo = packedLayoutAttr.getEncodingInfo(
+        cast<RankedTensorType>(linalgOp->getResultTypes()[0]));
+  }
 
   if (isIdentityLayout(encodingInfo)) {
     return dropEncodingAndCloneOp(builder, linalgOp,
@@ -552,9 +562,9 @@ enumerateCPUMatmulTiles(IREE::Encoding::EncodingAttr encoding,
   return {};
 }
 
-struct CPUDeviceEncodingLayoutResolverAttrInterface
-    : public DeviceEncodingLayoutResolverExternalModelBase<
-          CPUDeviceEncodingLayoutResolverAttrInterface, CPUEncodingLayoutAttr> {
+struct CPUDeviceEncodingPackedLayoutAttrInterface
+    : public DevicePackedLayoutAttrExternalModelBase<
+          CPUDeviceEncodingPackedLayoutAttrInterface, CPUEncodingLayoutAttr> {
 
   DictionaryAttr getConfiguration(Attribute attr) const {
     return cast<CPUEncodingLayoutAttr>(attr).getConfiguration();
@@ -600,6 +610,11 @@ struct CPUDeviceEncodingLayoutResolverAttrInterface
     }
     return info;
   }
+};
+
+struct CPUDeviceEncodingLayoutAttrInterface final
+    : public DeviceEncodingLayoutAttrInterfaceExternalModelBase<
+          CPUDeviceEncodingLayoutAttrInterface, CPUEncodingLayoutAttr> {
 
   Operation *lowerOp(Attribute attr, OpBuilder &b, Operation *op,
                      TypeRange convertedResTypes,
@@ -612,7 +627,7 @@ struct CPUDeviceEncodingLayoutResolverAttrInterface
 
     FailureOr<Operation *> newOp = lowerContractionOpWithEncoding(
         b, linalgOp, convertedOperands,
-        cast<IREE::Codegen::LayoutAttrInterface>(layoutAttr));
+        cast<IREE::Encoding::LayoutAttrInterface>(layoutAttr));
     return newOp.value_or(nullptr);
   }
 };
@@ -633,19 +648,19 @@ struct CPUHostEncodingLayoutResolverAttrInterface final
 
   Attribute getLayout(Attribute attr, RankedTensorType type) const {
     MLIRContext *ctx = attr.getContext();
-    return CPUEncodingLayoutAttr::get(ctx, getLayoutImpl(attr, type));
+    return CPUEncodingLayoutAttr::get(ctx, getPackedLayoutImpl(attr, type));
   }
 };
 
 struct CPUHostSerializableEncodingAttrInterface final
-    : HostSerializableEncodingAttrInterfaceExternalModelBase<
+    : IREE::Encoding::SerializableEncodingAttrInterface::ExternalModel<
           CPUHostSerializableEncodingAttrInterface, CPUEncodingLayoutAttr> {
 
   Value calculateStorageSizeInBytes(Attribute attr, Location loc,
                                     OpBuilder &builder, RankedTensorType type,
                                     ValueRange dynamicDims) const {
-    return calculateStorageSizeInBytesImpl(attr, loc, builder, type,
-                                           dynamicDims);
+    return calculatePackedStorageSizeInBytesImpl(attr, loc, builder, type,
+                                                 dynamicDims);
   }
 };
 
@@ -683,10 +698,9 @@ enumerateVMVXMatmulTiles(linalg::ContractionDimensions cDims,
   };
 }
 
-struct VMVXDeviceEncodingLayoutResolverAttrInterface final
-    : DeviceEncodingLayoutResolverExternalModelBase<
-          VMVXDeviceEncodingLayoutResolverAttrInterface,
-          VMVXEncodingLayoutAttr> {
+struct VMVXDeviceEncodingPackedLayoutAttrInterface final
+    : DevicePackedLayoutAttrExternalModelBase<
+          VMVXDeviceEncodingPackedLayoutAttrInterface, VMVXEncodingLayoutAttr> {
 
   DictionaryAttr getConfiguration(Attribute attr) const {
     return cast<VMVXEncodingLayoutAttr>(attr).getConfiguration();
@@ -732,6 +746,11 @@ struct VMVXDeviceEncodingLayoutResolverAttrInterface final
     }
     return info;
   }
+};
+
+struct VMVXDeviceEncodingLayoutAttrInterface final
+    : DeviceEncodingLayoutAttrInterfaceExternalModelBase<
+          VMVXDeviceEncodingLayoutAttrInterface, VMVXEncodingLayoutAttr> {
 
   Operation *lowerOp(Attribute attr, OpBuilder &b, Operation *op,
                      TypeRange convertedResTypes,
@@ -744,7 +763,7 @@ struct VMVXDeviceEncodingLayoutResolverAttrInterface final
 
     FailureOr<Operation *> newOp = lowerContractionOpWithEncoding(
         b, linalgOp, convertedOperands,
-        cast<IREE::Codegen::LayoutAttrInterface>(layoutAttr));
+        cast<IREE::Encoding::LayoutAttrInterface>(layoutAttr));
     return newOp.value_or(nullptr);
   }
 };
@@ -764,18 +783,18 @@ struct VMVXHostEncodingLayoutResolverAttrInterface final
   Attribute getLayout(Attribute attr, RankedTensorType type) const {
     MLIRContext *ctx = attr.getContext();
     return VMVXEncodingLayoutAttr::get(
-        ctx, getLayoutImpl(attr, type, /*addEncodingAttr=*/true));
+        ctx, getPackedLayoutImpl(attr, type, /*addEncodingAttr=*/true));
   }
 };
 
 struct VMVXHostSerializableEncodingAttrInterface final
-    : HostSerializableEncodingAttrInterfaceExternalModelBase<
+    : IREE::Encoding::SerializableEncodingAttrInterface::ExternalModel<
           VMVXHostSerializableEncodingAttrInterface, VMVXEncodingLayoutAttr> {
   Value calculateStorageSizeInBytes(Attribute attr, Location loc,
                                     OpBuilder &builder, RankedTensorType type,
                                     ValueRange dynamicDims) const {
-    return calculateStorageSizeInBytesImpl(attr, loc, builder, type,
-                                           dynamicDims);
+    return calculatePackedStorageSizeInBytesImpl(attr, loc, builder, type,
+                                                 dynamicDims);
   }
 };
 
@@ -785,11 +804,13 @@ void registerCPUEncodingExternalModels(DialectRegistry &registry) {
   registry.addExtension(
       +[](MLIRContext *ctx, IREE::CPU::IREECPUDialect *dialect) {
         IREE::CPU::CPUEncodingLayoutAttr::attachInterface<
-            CPUDeviceEncodingLayoutResolverAttrInterface,
+            CPUDeviceEncodingPackedLayoutAttrInterface,
+            CPUDeviceEncodingLayoutAttrInterface,
             CPUHostEncodingLayoutResolverAttrInterface,
             CPUHostSerializableEncodingAttrInterface>(*ctx);
         IREE::CPU::VMVXEncodingLayoutAttr::attachInterface<
-            VMVXDeviceEncodingLayoutResolverAttrInterface,
+            VMVXDeviceEncodingPackedLayoutAttrInterface,
+            VMVXDeviceEncodingLayoutAttrInterface,
             VMVXHostEncodingLayoutResolverAttrInterface,
             VMVXHostSerializableEncodingAttrInterface>(*ctx);
       });
