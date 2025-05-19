@@ -46,14 +46,17 @@ func.func @causal_attention1x3x4() {
                                            [true, true,   false],
                                            [true, true,   true]]]> : tensor<1x3x3xi1>
   %scale = arith.constant 0.5 : f32
-  %1 = iree_linalg_ext.attention  {indexing_maps = [affine_map<(d0, d1, d2, d3, d4) -> (d0, d1, d2)>,
+  %1 = iree_linalg_ext.attention  {
+    indexing_maps = [affine_map<(d0, d1, d2, d3, d4) -> (d0, d1, d2)>,
                      affine_map<(d0, d1, d2, d3, d4) -> (d0, d3, d2)>,
                      affine_map<(d0, d1, d2, d3, d4) -> (d0, d3, d4)>,
                      affine_map<(d0, d1, d2, d3, d4) -> ()>,
                      affine_map<(d0, d1, d2, d3, d4) -> (d0, d1, d3)>,
                      affine_map<(d0, d1, d2, d3, d4) -> (d0, d1, d4)>]}
-                     ins(%query, %key, %value, %scale, %mask : tensor<1x3x4xf32>,
-        tensor<1x3x4xf32>, tensor<1x3x4xf32>, f32, tensor<1x3x3xi1>) outs(%init : tensor<1x3x4xf32>) {
+        ins(%query, %key, %value, %scale 
+        : tensor<1x3x4xf32>, tensor<1x3x4xf32>, tensor<1x3x4xf32>, f32)
+        mask(%mask : tensor<1x3x3xi1>)
+        outs(%init : tensor<1x3x4xf32>) {
           ^bb0(%arg0: f32):
           iree_linalg_ext.yield %arg0 : f32
         } -> tensor<1x3x4xf32>
@@ -94,8 +97,10 @@ func.func @attention1x4x4_i1_mask_all_ones() {
                      affine_map<(d0, d1, d2, d3, d4) -> ()>,
                      affine_map<(d0, d1, d2, d3, d4) -> (d0, d1, d3)>,
                      affine_map<(d0, d1, d2, d3, d4) -> (d0, d1, d4)>]}
-                     ins(%query, %key, %value, %scale, %mask : tensor<1x4x4xf32>,
-        tensor<1x4x4xf32>, tensor<1x4x4xf32>, f32, tensor<1x4x4xi1>) outs(%init : tensor<1x4x4xf32>) {
+            ins(%query, %key, %value, %scale : tensor<1x4x4xf32>,
+        tensor<1x4x4xf32>, tensor<1x4x4xf32>, f32)
+            mask(%mask : tensor<1x4x4xi1>) 
+            outs(%init : tensor<1x4x4xf32>) {
           ^bb0(%arg0: f32):
           iree_linalg_ext.yield %arg0 : f32
         } -> tensor<1x4x4xf32>

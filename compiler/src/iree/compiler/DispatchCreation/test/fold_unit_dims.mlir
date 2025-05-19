@@ -140,7 +140,8 @@ util.func public @attention_mask_multi_m_dims(%arg0: tensor<8x4x1x128xf32>, %arg
       affine_map<(d0, d1, d2, d3, d4, d5, d6) -> ()>,
       affine_map<(d0, d1, d2, d3, d4, d5, d6) -> (d0, d1, d2, d5, d6)>,
       affine_map<(d0, d1, d2, d3, d4, d5, d6) -> (d0, d1, d2, d3)>]}
-    ins(%arg0, %arg1, %arg2, %arg3, %arg4 : tensor<8x4x1x128xf32>, tensor<?x32x8x128xf32>, tensor<?x32x8x128xf32>, f32, tensor<8x4x1x?x32xf32>)
+    ins(%arg0, %arg1, %arg2, %arg3 : tensor<8x4x1x128xf32>, tensor<?x32x8x128xf32>, tensor<?x32x8x128xf32>, f32)
+    mask(%arg4 : tensor<8x4x1x?x32xf32>)
     outs(%0 : tensor<8x4x1x128xf32>) {
   ^bb0(%arg5: f32):
     iree_linalg_ext.yield %arg5 : f32
@@ -162,7 +163,7 @@ util.func public @attention_mask_multi_m_dims(%arg0: tensor<8x4x1x128xf32>, %arg
 //  CHECK-SAME:       affine_map<(d0, d1, d2, d3, d4, d5, d6) -> ()>,
 //  CHECK-SAME:       affine_map<(d0, d1, d2, d3, d4, d5, d6) -> (d0, d1, d5, d6)>,
 //  CHECK-SAME:       affine_map<(d0, d1, d2, d3, d4, d5, d6) -> (d0, d1, d2, d3)>
-//  CHECK-SAME:     ins({{.+}}, %[[COLLAPSED]]
+//  CHECK-SAME:     mask(%[[COLLAPSED]] :
 //       CHECK:   util.return %[[ATTN]]
 
 
@@ -178,7 +179,8 @@ util.func public @attention_mask_single_m_dim(%arg0 : tensor<32x1x128xf16>, %arg
       affine_map<(d0, d1, d2, d3, d4) -> ()>,
       affine_map<(d0, d1, d2, d3, d4) -> (d0, d1, d4)>,
       affine_map<(d0, d1, d2, d3, d4) -> (d0, d1, d2)>]}
-    ins(%arg0, %arg1, %arg2, %arg3, %arg4 : tensor<32x1x128xf16>, tensor<32x?x128xf16>, tensor<32x128x?xf16>, f16, tensor<32x1x?xf16>)
+    ins(%arg0, %arg1, %arg2, %arg3 : tensor<32x1x128xf16>, tensor<32x?x128xf16>, tensor<32x128x?xf16>, f16)
+    mask(%arg4 : tensor<32x1x?xf16>)
     outs(%0 : tensor<32x1x128xf16>) {
   ^bb0(%arg7: f32):
     iree_linalg_ext.yield %arg7 : f32
@@ -200,5 +202,5 @@ util.func public @attention_mask_single_m_dim(%arg0 : tensor<32x1x128xf16>, %arg
 //  CHECK-SAME:       affine_map<(d0, d1, d2, d3, d4) -> ()>,
 //  CHECK-SAME:       affine_map<(d0, d1, d2, d3, d4) -> (d0, d4)>,
 //  CHECK-SAME:       affine_map<(d0, d1, d2, d3, d4) -> (d0, d1, d2)>
-//  CHECK-SAME:     ins({{.+}}, %[[COLLAPSED]]
+//  CHECK-SAME:     mask(%[[COLLAPSED]] :
 //       CHECK:   util.return %[[ATTN]]

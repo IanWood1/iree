@@ -803,7 +803,10 @@ util.func public @masked_attention_dynamic(%arg0: index, %arg1: tensor<4x8x4x?x3
       %16 = arith.select %15, %cst_0, %cst : f16
       linalg.yield %16 : f16
     } -> tensor<4x8x4x?x32x?x32xf16>
-    %7 = iree_linalg_ext.attention {indexing_maps = [affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d0, d1, d2, d3, d4, d6)>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d0, d7, d8, d1, d6)>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d0, d7, d8, d1, d5)>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> ()>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d0, d1, d2, d3, d4, d7, d8)>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d0, d1, d2, d3, d4, d5)>]} ins(%arg1, %arg2, %arg3, %cst_1, %6 : tensor<4x8x4x?x32x128xf16>, tensor<4x?x32x8x128xf16>, tensor<4x?x32x8x128xf16>, f16, tensor<4x8x4x?x32x?x32xf16>) outs(%4 : tensor<4x8x4x?x32x128xf16>) {
+    %7 = iree_linalg_ext.attention {indexing_maps = [affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d0, d1, d2, d3, d4, d6)>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d0, d7, d8, d1, d6)>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d0, d7, d8, d1, d5)>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> ()>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d0, d1, d2, d3, d4, d7, d8)>, affine_map<(d0, d1, d2, d3, d4, d5, d6, d7, d8) -> (d0, d1, d2, d3, d4, d5)>]} 
+    ins(%arg1, %arg2, %arg3, %cst_1 : tensor<4x8x4x?x32x128xf16>, tensor<4x?x32x8x128xf16>, tensor<4x?x32x8x128xf16>, f16)
+    mask(%6 : tensor<4x8x4x?x32x?x32xf16>)
+    outs(%4 : tensor<4x8x4x?x32x128xf16>) {
     ^bb0(%arg4: f32):
       iree_linalg_ext.yield %arg4 : f32
     } -> tensor<4x8x4x?x32x128xf16>
@@ -821,7 +824,7 @@ util.func public @masked_attention_dynamic(%arg0: index, %arg1: tensor<4x8x4x?x3
 //       CHECK:   %[[MASK:.+]] = linalg.generic
 //  CHECK-SAME:     outs({{.*}} : tensor<4x8x4x?x?xf16>)
 //       CHECK:   %[[ATTN:.+]] = iree_linalg_ext.attention
-//  CHECK-SAME:     ins({{.*}}, %[[MASK]] :
+//  CHECK-SAME:     mask(%[[MASK]] :
 //  CHECK-SAME:     outs({{.*}} : tensor<4x8x4x?x128xf16>)
 //       CHECK:   %[[RES:.+]] = linalg.generic
 //  CHECK-SAME:       ins(%[[ATTN]] : tensor<4x8x4x?x128xf16>)

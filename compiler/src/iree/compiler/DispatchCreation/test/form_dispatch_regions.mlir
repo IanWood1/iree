@@ -920,7 +920,9 @@ util.func @attention_clone_mask(%Q : tensor<?x?xf16>, %K : tensor<?x?xf16>, %V: 
       affine_map<(M, N, K2, K1) -> (K2, K1)>,
       affine_map<(M, N, K2, K1) -> (M, N)>
     ]
-  } ins(%Q, %K, %V, %scale, %causalmask : tensor<?x?xf16>, tensor<?x?xf16>, tensor<?x?xf16>, f16, tensor<?x?xi1>)
+  } 
+  ins(%Q, %K, %V, %scale : tensor<?x?xf16>, tensor<?x?xf16>, tensor<?x?xf16>, f16)
+  mask(%causalmask : tensor<?x?xi1>)
   outs(%out_e : tensor<?x?xf16>) {
   ^bb0(%score : f32):
       iree_linalg_ext.yield %score : f32

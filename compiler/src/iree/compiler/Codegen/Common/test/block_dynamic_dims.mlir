@@ -44,7 +44,8 @@ func.func @block_attention_dims() {
                        affine_map<(d0, d1, d2, d3, d4, d5) -> ()>,
                        affine_map<(d0, d1, d2, d3, d4, d5) -> (d0, d1, d2, d5)>,
                        affine_map<(d0, d1, d2, d3, d4, d5) -> (d0, d1, d2, d3)>]}
-      ins(%q, %key, %value, %cst, %mask : tensor<4x?x32x128xf16>, tensor<4x?x32x128xf16>, tensor<4x?x32x128xf16>, f16, tensor<4x32x?x?xf16>)
+      ins(%q, %key, %value, %cst : tensor<4x?x32x128xf16>, tensor<4x?x32x128xf16>, tensor<4x?x32x128xf16>, f16)
+      mask(%mask : tensor<4x32x?x?xf16>)
       outs(%2 : tensor<4x32x?x128xf16>) {
     ^bb0(%b0 : f16) :
       iree_linalg_ext.yield %b0 : f16
@@ -96,7 +97,8 @@ func.func @block_attention_dims() {
 //  CHECK-SAME:       sizes = [4, 32, %[[M_DYNAMIC]], 16, %[[K2_DYNAMIC]], 32]
 //  CHECK-SAME:       !iree_tensor_ext.dispatch.tensor<readonly:tensor<4x32x?x16x?x32xf16>>{%[[M_DYNAMIC]], %[[K2_DYNAMIC]]}
 //       CHECK:   %[[ATTENTION:.+]] = iree_linalg_ext.attention
-//       CHECK:       ins(%[[Q]], %[[K]], %[[V]], %{{.+}}, %[[MASK]] :
+//       CHECK:       ins(%[[Q]], %[[K]], %[[V]]
+//       CHECK:       mask(%[[MASK]]
 //       CHECK:   %[[GENERIC:.+]] = linalg.generic
 //       CHECK:   iree_tensor_ext.dispatch.tensor.store %[[GENERIC]], %[[OUTPUT_BINDING]]
 

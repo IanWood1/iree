@@ -43,9 +43,10 @@ util.func public @attention_v_reshape_propagation(%arg0: index,
                        affine_map<(d0, d1, d2, d3, d4) -> ()>,
                        affine_map<(d0, d1, d2, d3, d4) -> (d0, d1, d4)>,
                        affine_map<(d0, d1, d2, d3, d4) -> (d0, d1, d2)>]}
-      ins(%arg2, %arg3, %collapsed, %arg4, %arg5
+      ins(%arg2, %arg3, %collapsed, %arg4
         : tensor<128x?x128xf16>, tensor<128x?x128xf16>, tensor<128x128x?xf16>,
-          f16, tensor<128x?x?xf16>)
+          f16)
+      mask(%arg5 : tensor<128x?x?xf16>)
       outs(%1 : tensor<128x?x128xf16>) {
       ^bb0(%arg6: f32):
     iree_linalg_ext.yield %arg6 : f32

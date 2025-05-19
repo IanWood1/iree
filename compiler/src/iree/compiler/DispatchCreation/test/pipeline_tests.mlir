@@ -204,9 +204,10 @@ util.func public @attention_rope_fusion(%arg0: index, %arg1: tensor<?x128xf32>,
         affine_map<(d0, d1, d2, d3, d4, d5, d6) -> ()>,
         affine_map<(d0, d1, d2, d3, d4, d5, d6) -> (d0, d1, d2, d3, d6)>,
         affine_map<(d0, d1, d2, d3, d4, d5, d6) -> (d0, d1, d2, d3, d4)>]}
-      ins(%expanded, %arg2, %arg3, %arg4, %arg5
+      ins(%expanded, %arg2, %arg3, %arg4
         : tensor<4x8x4x?x128xf16>, tensor<4x8x4x?x128xf16>,
-          tensor<4x8x4x128x?xf16>, f16, tensor<4x8x4x?x?xf16>)
+          tensor<4x8x4x128x?xf16>, f16)
+      mask(%arg5 : tensor<4x8x4x?x?xf16>)
       outs(%3 : tensor<4x8x4x?x128xf16>) {
     ^bb0(%arg7: f32):
       iree_linalg_ext.yield %arg7 : f32

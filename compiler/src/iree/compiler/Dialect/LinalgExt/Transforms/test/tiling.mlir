@@ -1733,7 +1733,7 @@ func.func @attention_float_mask(%query: tensor<192x1024x64xf32>, %key: tensor<19
                      affine_map<(d0, d1, d2, d3, d4) -> ()>,
                      affine_map<(d0, d1, d2, d3, d4) -> (d0, d1, d3)>,
                      affine_map<(d0, d1, d2, d3, d4) -> (d0, d1, d4)>]}
-                     ins(%query, %key, %value, %scale, %mask : tensor<192x1024x64xf32>, tensor<192x1024x64xf32>, tensor<192x1024x64xf32>, f32, tensor<192x1024x1024xf32>) outs(%0 : tensor<192x1024x64xf32>) {
+                     ins(%query, %key, %value, %scale : tensor<192x1024x64xf32>, tensor<192x1024x64xf32>, tensor<192x1024x64xf32>, f32) mask(%mask : tensor<192x1024x1024xf32>) outs(%0 : tensor<192x1024x64xf32>) {
                       ^bb0(%score: f32):
                         iree_linalg_ext.yield %score: f32
                      } -> tensor<192x1024x64xf32>
@@ -1784,7 +1784,8 @@ module attributes { transform.with_named_sequence } {
 // CHECK:            %[[D5:.+]] = iree_linalg_ext.attention
 // CHECK-SAME:                     {indexing_maps = [#[[MAP_Q]], #[[MAP_K]], #[[MAP_V]], #[[MAP_S]], #[[MAP_M]], #[[MAP_O]]]}
 // CHECK-SAME:                    ins(%[[EXTRACTED_SLICE]], %[[EXTRACTED_SLICE_0]],
-// CHECK-SAME:         %[[EXTRACTED_SLICE_1]], %[[C1_F32]], %[[EXTRACTED_SLICE_2]] : tensor<?x?x64xf32>, tensor<?x1024x64xf32>, tensor<?x1024x64xf32>, f32, tensor<?x?x1024xf32>)
+// CHECK-SAME:         %[[EXTRACTED_SLICE_1]], %[[C1_F32]] : tensor<?x?x64xf32>, tensor<?x1024x64xf32>, tensor<?x1024x64xf32>, f32)
+// CHECK-SAME:                    mask(%[[EXTRACTED_SLICE_2]] : tensor<?x?x1024xf32>)
 // CHECK-SAME:         outs(%[[EXTRACTED_SLICE_3]] : tensor<?x?x64xf32>)
 // CHECK:                ^[[BLOCK:.+]](%[[SCORE:.+]]: f32):
 // CHECK:                  iree_linalg_ext.yield %[[SCORE]] : f32
@@ -1809,7 +1810,7 @@ func.func @attention_bool_mask(%query: tensor<192x1024x64xf32>, %key: tensor<192
                      affine_map<(d0, d1, d2, d3, d4) -> ()>,
                      affine_map<(d0, d1, d2, d3, d4) -> (d0, d1, d3)>,
                      affine_map<(d0, d1, d2, d3, d4) -> (d0, d1, d4)>]}
-                     ins(%query, %key, %value, %scale, %mask : tensor<192x1024x64xf32>, tensor<192x1024x64xf32>, tensor<192x1024x64xf32>, f32, tensor<192x1024x1024xi1>) outs(%0 : tensor<192x1024x64xf32>) {
+                     ins(%query, %key, %value, %scale : tensor<192x1024x64xf32>, tensor<192x1024x64xf32>, tensor<192x1024x64xf32>, f32) mask(%mask : tensor<192x1024x1024xi1>) outs(%0 : tensor<192x1024x64xf32>) {
                       ^bb0(%score: f32):
                         iree_linalg_ext.yield %score: f32
                      } -> tensor<192x1024x64xf32>
@@ -1860,7 +1861,8 @@ module attributes { transform.with_named_sequence } {
 // CHECK:            %[[D5:.+]] = iree_linalg_ext.attention
 // CHECK-SAME:                     {indexing_maps = [#[[MAP_Q]], #[[MAP_K]], #[[MAP_V]], #[[MAP_S]], #[[MAP_M]], #[[MAP_O]]]}
 // CHECK-SAME:                    ins(%[[EXTRACTED_SLICE]], %[[EXTRACTED_SLICE_0]],
-// CHECK-SAME:         %[[EXTRACTED_SLICE_1]], %[[C1_F32]], %[[EXTRACTED_SLICE_2]] : tensor<?x?x64xf32>, tensor<?x1024x64xf32>, tensor<?x1024x64xf32>, f32, tensor<?x?x1024xi1>)
+// CHECK-SAME:         %[[EXTRACTED_SLICE_1]], %[[C1_F32]] : tensor<?x?x64xf32>, tensor<?x1024x64xf32>, tensor<?x1024x64xf32>, f32)
+// CHECK-SAME:                    mask(%[[EXTRACTED_SLICE_2]] : tensor<?x?x1024xi1>)
 // CHECK-SAME:         outs(%[[EXTRACTED_SLICE_3]] : tensor<?x?x64xf32>)
 // CHECK:                ^[[BLOCK:.+]](%[[SCORE:.+]]: f32):
 // CHECK:                  iree_linalg_ext.yield %[[SCORE]] : f32
@@ -2214,7 +2216,7 @@ func.func @online_attention_float_mask(%query: tensor<192x1024x64xf32>,
   // Adjust the operation to correctly handle the mask
   %out:3 = iree_linalg_ext.online_attention
         { indexing_maps = [#mapQ, #mapK, #mapV, #mapS, #mapM, #mapO, #mapR, #mapR] }
-        ins(%query, %key, %value, %scale, %mask : tensor<192x1024x64xf32>, tensor<192x1024x64xf32>, tensor<192x1024x64xf32>, f32, tensor<192x1024x1024xf32>)
+        ins(%query, %key, %value, %scale : tensor<192x1024x64xf32>, tensor<192x1024x64xf32>, tensor<192x1024x64xf32>, f32) mask(%mask : tensor<192x1024x1024xf32>)
         outs(%output_fill, %acc_fill, %sum_fill : tensor<192x1024x64xf32>, tensor<192x1024xf32>, tensor<192x1024xf32>) {
                       ^bb0(%score: f32):
                         iree_linalg_ext.yield %score: f32
@@ -2248,7 +2250,8 @@ func.func @online_attention_float_mask(%query: tensor<192x1024x64xf32>,
 // CHECK-DAG:  %[[S:.+]] = tensor.extract_slice %{{.*}}[%[[I0]], %[[I1]]] [4, 128] [1, 1] : tensor<192x1024xf32> to tensor<4x128xf32>
 // CHECK-DAG: iree_linalg_ext.online_attention
 // CHECK-SAME: {indexing_maps = [#[[$MAP0]], #[[$MAP1]], #[[$MAP2]], #[[$MAP3]], #[[$MAP4]], #[[$MAP5]], #[[$MAP6]], #[[$MAP6]]]}
-// CHECK-SAME: ins(%[[Q]], %[[K]], %[[V]], %{{.*}}, %[[MASK]] : tensor<4x128x64xf32>, tensor<4x1024x64xf32>, tensor<4x1024x32xf32>, f32, tensor<4x128x1024xf32>)
+// CHECK-SAME: ins(%[[Q]], %[[K]], %[[V]], %{{.*}} : tensor<4x128x64xf32>, tensor<4x1024x64xf32>, tensor<4x1024x32xf32>, f32)
+// CHECK-SAME: mask(%[[MASK]] : tensor<4x128x1024xf32>)
 // CHECK-SAME: outs(%[[O]], %[[M]], %[[S]] : tensor<4x128x32xf32>, tensor<4x128xf32>, tensor<4x128xf32>)
 // CHECK: scf.forall.in_parallel
 
@@ -2290,7 +2293,7 @@ func.func @online_attention_bool_mask(%query: tensor<192x1024x64xf32>,
   // Adjust the operation to correctly handle the mask
   %out:3 = iree_linalg_ext.online_attention
         { indexing_maps = [#mapQ, #mapK, #mapV, #mapS, #mapM, #mapO, #mapR, #mapR] }
-        ins(%query, %key, %value, %scale, %mask : tensor<192x1024x64xf32>, tensor<192x1024x64xf32>, tensor<192x1024x64xf32>, f32, tensor<192x1024x1024xi1>)
+        ins(%query, %key, %value, %scale : tensor<192x1024x64xf32>, tensor<192x1024x64xf32>, tensor<192x1024x64xf32>, f32) mask(%mask : tensor<192x1024x1024xi1>)
         outs(%output_fill, %acc_fill, %sum_fill : tensor<192x1024x64xf32>, tensor<192x1024xf32>, tensor<192x1024xf32>) {
                       ^bb0(%score: f32):
                         iree_linalg_ext.yield %score: f32
@@ -2325,7 +2328,8 @@ func.func @online_attention_bool_mask(%query: tensor<192x1024x64xf32>,
 // CHECK-DAG:  %[[S:.+]] = tensor.extract_slice %{{.*}}[%[[I0]], %[[I1]]] [4, 128] [1, 1] : tensor<192x1024xf32> to tensor<4x128xf32>
 // CHECK-DAG: iree_linalg_ext.online_attention
 // CHECK-SAME: {indexing_maps = [#[[$MAP0]], #[[$MAP1]], #[[$MAP2]], #[[$MAP3]], #[[$MAP4]], #[[$MAP5]], #[[$MAP6]], #[[$MAP6]]]}
-// CHECK-SAME: ins(%[[Q]], %[[K]], %[[V]], %{{.*}}, %[[MASK]] : tensor<4x128x64xf32>, tensor<4x1024x64xf32>, tensor<4x1024x32xf32>, f32, tensor<4x128x1024xi1>)
+// CHECK-SAME: ins(%[[Q]], %[[K]], %[[V]], %{{.*}} : tensor<4x128x64xf32>, tensor<4x1024x64xf32>, tensor<4x1024x32xf32>, f32)
+// CHECK-SAME: mask(%[[MASK]] : tensor<4x128x1024xi1>)
 // CHECK-SAME: outs(%[[O]], %[[M]], %[[S]] : tensor<4x128x32xf32>, tensor<4x128xf32>, tensor<4x128xf32>)
 // CHECK: scf.forall.in_parallel
 
