@@ -1458,9 +1458,7 @@ LogicalResult AttentionOp::verify() {
       return failure();
   }
 
-  FloatType probOutputScaleElementType =
-      dyn_cast<FloatType>(getProbOutputScale().getType());
-  if (getProbOutputScale() && !probOutputScaleElementType) {
+  if (getProbOutputScale() && !isa<FloatType>(getProbOutputScale().getType())) {
     return attnOp->emitOpError(
         "expected prob output scale to be of floating point type");
   }

@@ -377,7 +377,6 @@ Value computeQKAndElementwise(Location loc, OpBuilder &b, Value query,
     // to multiplying by a static value. We are able to do this as `max` and
     // `sum` are scaled by the same value so the end result is the same.
     if (prob_output_scale == nullptr) {
-      assert(false);
       auto fpTy = cast<FloatType>(qETy);
       double mx =
           APFloat::getLargest(fpTy.getFloatSemantics(), /*Negative=*/false)
@@ -489,8 +488,7 @@ FailureOr<SmallVector<Value>> AttentionOp::decomposeOperation(OpBuilder &b) {
 
   // P = P / sum
   p = elementwiseValueInPlace<arith::DivFOp>(b, loc, pMap, sumMap, p, sum);
-  
-  assert(false);
+
   // ---- Scale and truncate LHS to match RHS ----
   SmallVector<OpFoldResult> sSizes;
   for (AffineExpr dimExpr : sMap.getResults()) {
@@ -575,7 +573,7 @@ OnlineAttentionOp::decomposeOperation(OpBuilder &b) {
   AffineMap sumMap = getSumMap();
   Value normSum = elementwiseValueInPlace<arith::MulFOp>(b, loc, sumMap,
                                                          normMap, oldSum, norm);
-  
+
   // P = exp2(S - newMax)
   // PMap = SMap
   AffineMap pMap = sMap;
