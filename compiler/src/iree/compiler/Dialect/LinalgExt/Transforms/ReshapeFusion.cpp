@@ -752,7 +752,7 @@ getOperandReassociation(AffineMap indexingMap,
 }
 
 /// Get the new value to use for a given `OpOperand` in the collapsed operation.
-static Value getCollapsedOpOperand(Location loc, AttentionOp op,
+static Value getCollapsedOpOperand(Location loc, LinalgFusionOpInterface op,
                                    OpOperand *opOperand,
                                    const CollapsingInfo &collapsingInfo,
                                    OpBuilder &builder) {
@@ -778,7 +778,7 @@ static Value getCollapsedOpOperand(Location loc, AttentionOp op,
       .getResult();
 }
 
-static void collapseOperandsAndResults(AttentionOp op,
+static void collapseOperandsAndResults(LinalgFusionOpInterface op,
                                        const CollapsingInfo &collapsingInfo,
                                        RewriterBase &rewriter,
                                        SmallVectorImpl<Value> &inputOperands,
@@ -849,7 +849,7 @@ getCollapsedOpIteratorTypes(ArrayRef<utils::IteratorType> iteratorTypes,
 }
 
 /// Returns a copy of `attentionOp` with collapsed iteration dimensions.
-static Operation *createCollapsedOp(AttentionOp origOp,
+static Operation *createCollapsedOp(LinalgFusionOpInterface origOp,
                                     const CollapsingInfo &collapsingInfo,
                                     RewriterBase &rewriter) {
   SmallVector<Value> inputOperands, outputOperands;
@@ -864,38 +864,47 @@ static Operation *createCollapsedOp(AttentionOp origOp,
   SmallVector<utils::IteratorType> iteratorTypes(getCollapsedOpIteratorTypes(
       origOp.getLoopIteratorTypes(), collapsingInfo));
 
-  Value maskOperand;
-  if (inputOperands.size() > 4) {
-    maskOperand = inputOperands[4];
-  }
+  if (auto attnOp = dyn_cast<AttentionOp>(origOp.getOperation())) {
+    Value maskOperand;
+    if (inputOperands.size() > 4) {
+      maskOperand = inputOperands[4];
+    }
 
-  auto collapsedOp = rewriter.create<AttentionOp>(
-      origOp.getLoc(), resultTypes, inputOperands[0], inputOperands[1],
-      inputOperands[2], inputOperands[3], outputOperands[0],
-      rewriter.getAffineMapArrayAttr(indexingMaps), maskOperand);
-  rewriter.inlineRegionBefore(origOp.getRegion(), collapsedOp.getRegion(),
-                              collapsedOp.getRegion().begin());
-  return collapsedOp;
+    auto collapsedOp = rewriter.create<AttentionOp>(
+        origOp.getLoc(), resultTypes, inputOperands[0], inputOperands[1],
+        inputOperands[2], inputOperands[3], outputOperands[0],
+        rewriter.getAffineMapArrayAttr(indexingMaps), maskOperand);
+    rewriter.inlineRegionBefore(attnOp.getRegion(), collapsedOp.getRegion(),
+                                collapsedOp.getRegion().begin());
+    return collapsedOp;
+  }
+  return nullptr;
 }
 
 FailureOr<CollapseResult>
-collapseOpIterationDims(AttentionOp op,
+collapseOpIterationDims(LinalgExtOp op,
                         ArrayRef<ReassociationIndices> foldedIterationDims,
                         RewriterBase &rewriter) {
-  if (op.getNumLoops() <= 1 || foldedIterationDims.empty() ||
+  auto tilingOp = dyn_cast<LinalgFusionOpInterface>(op.getOperation());
+  if (!tilingOp) {
+    return failure();
+  }
+
+  if (tilingOp.getNumLoops() <= 1 || foldedIterationDims.empty() ||
       llvm::all_of(foldedIterationDims, [](ReassociationIndicesRef foldedDims) {
         return foldedDims.size() <= 1;
       }))
     return failure();
 
   CollapsingInfo collapsingInfo;
-  if (failed(
-          collapsingInfo.initialize(op.getNumLoops(), foldedIterationDims))) {
+  if (failed(collapsingInfo.initialize(tilingOp.getNumLoops(),
+                                       foldedIterationDims))) {
     return rewriter.notifyMatchFailure(
         op, "illegal to collapse specified dimensions");
   }
 
-  Operation *collapsedOp = createCollapsedOp(op, collapsingInfo, rewriter);
+  Operation *collapsedOp =
+      createCollapsedOp(tilingOp, collapsingInfo, rewriter);
 
   auto loc = op.getLoc();
   SmallVector<Value> results;
@@ -906,7 +915,7 @@ collapseOpIterationDims(AttentionOp op,
     auto collapsedOpResultType = cast<ShapedType>(collapsedOpResult.getType());
     if (collapsedOpResultType.getRank() != originalResultType.getRank()) {
       AffineMap indexingMap =
-          op.getIndexingMapMatchingResult(originalResult.value());
+          tilingOp.getIndexingMapMatchingResult(originalResult.value());
       SmallVector<ReassociationIndices> reassociation =
           getOperandReassociation(indexingMap, collapsingInfo);
       Value result;

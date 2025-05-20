@@ -42,11 +42,21 @@ def LinalgExtInterface : OpInterface<"LinalgExtOp"> {
 }
 
 // Interface that allows for fusion of both LinalgExt and Linalg ops.
-def LinalgFusionInterface : OpInterface<"LinalgFusionOpInterface"> {
+def LinalgFusionInterface : OpInterface<"LinalgFusionOpInterface", 
+    [DestinationStyleOpInterface]> {
   let methods = [
     //===------------------------------------------------------------------===//
     // Interface methods for fusion.
     //===------------------------------------------------------------------===//
+    InterfaceMethod<
+      /*desc=*/[{
+        Return the number of parallel loops.
+      }],
+      /*retTy=*/"SmallVector<mlir::utils::IteratorType>",
+      /*methodName=*/"getLoopIteratorTypes",
+      /*args=*/(ins),
+      /*methodBody=*/""
+    >,
     InterfaceMethod<
       /*desc=*/[{
         Return an AffineMap for each operand or nullptr if the operand

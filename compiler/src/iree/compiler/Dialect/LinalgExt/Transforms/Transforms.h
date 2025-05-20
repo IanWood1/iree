@@ -64,7 +64,7 @@ struct CollapseResult {
 /// `foldedIterationDims`. Returns failure when the op cannot be collapsed or it
 /// is a no-op.
 FailureOr<CollapseResult>
-collapseOpIterationDims(AttentionOp op,
+collapseOpIterationDims(LinalgExtOp op,
                         ArrayRef<ReassociationIndices> foldedIterationDims,
                         RewriterBase &rewriter);
 

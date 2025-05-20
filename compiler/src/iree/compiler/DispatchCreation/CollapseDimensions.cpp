@@ -168,7 +168,8 @@ static SmallVector<ReassociationIndices> getCollapsibleLoops(Operation *op) {
 
 /// Returns true if the given op is collapsable.
 static bool isEligibleForCollapse(Operation *op) {
-  if (isa<IREE::LinalgExt::AttentionOp, linalg::FillOp>(op)) {
+  if (isa<IREE::LinalgExt::AttentionOp, IREE::LinalgExt::GatherOp,
+          linalg::FillOp>(op)) {
     return true;
   }
 
@@ -965,20 +966,20 @@ collapseDimensionsForDispatch(IRRewriter &rewriter,
     auto maybeReplacements =
         llvm::TypeSwitch<Operation *, ResultsType>(opToCollapse)
             .Case<linalg::LinalgOp>(
-                [&, &info = info](auto genericOp) -> ResultsType {
+                [&, &info = info](auto linalgOp) -> ResultsType {
                   FailureOr<linalg::CollapseResult> maybeReplacements =
                       mlir::linalg::collapseOpIterationDims(
-                          genericOp, info.getReassocation(), rewriter);
+                          linalgOp, info.getReassocation(), rewriter);
                   if (failed(maybeReplacements)) {
                     return failure();
                   }
                   return maybeReplacements->results;
                 })
-            .Case<IREE::LinalgExt::AttentionOp>(
-                [&, &info = info](auto attentionOp) -> ResultsType {
+            .Case<IREE::LinalgExt::LinalgExtOp>(
+                [&, &info = info](auto linalgExtOp) -> ResultsType {
                   FailureOr<IREE::LinalgExt::CollapseResult> maybeReplacements =
                       IREE::LinalgExt::collapseOpIterationDims(
-                          attentionOp, info.getReassocation(), rewriter);
+                          linalgExtOp, info.getReassocation(), rewriter);
                   if (failed(maybeReplacements)) {
                     return failure();
                   }

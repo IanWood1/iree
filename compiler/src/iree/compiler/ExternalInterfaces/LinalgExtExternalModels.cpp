@@ -18,6 +18,11 @@ struct LinalgFusionOpInterfaceAdapter
     : public IREE::LinalgExt::LinalgFusionOpInterface::ExternalModel<
           LinalgFusionOpInterfaceAdapter<ConcreteType>, ConcreteType> {
 public:
+  SmallVector<mlir::utils::IteratorType>
+  getLoopIteratorTypes(mlir::Operation *op) const {
+    return (llvm::cast<ConcreteType>(op).getIteratorTypesArray());
+  }
+
   SmallVector<AffineMap> getIndexingMapsForOperands(mlir::Operation *op) const {
     auto maps = llvm::cast<ConcreteType>(op)
                     .getIndexingMaps()
@@ -70,6 +75,11 @@ struct SoftmaxFusionOpInterfaceAdapter
     : public IREE::LinalgExt::LinalgFusionOpInterface::ExternalModel<
           SoftmaxFusionOpInterfaceAdapter, linalg::SoftmaxOp> {
 public:
+  SmallVector<mlir::utils::IteratorType>
+  getLoopIteratorTypes(mlir::Operation *op) const {
+    return (llvm::cast<linalg::SoftmaxOp>(op).getLoopIteratorTypes());
+  }
+
   SmallVector<AffineMap> getIndexingMapsForOperands(mlir::Operation *op) const {
     Builder b(op->getContext());
     return llvm::to_vector(llvm::map_range(

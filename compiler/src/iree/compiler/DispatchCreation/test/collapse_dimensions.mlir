@@ -911,3 +911,40 @@ util.func public @collapse_fill_of_arg(%arg0: tensor<224x32xf32>, %arg1: tensor<
 //  CHECK-SAME:     ins(%[[COLLAPSE2]], %[[ARG0]] : tensor<3748250x32xf32>, tensor<224x32xf32>)
 //  CHECK-SAME:     outs(%[[FILL]] : tensor<3748250x224xf32>)
 //       CHECK:   flow.return %[[GEN0]]
+
+// -----
+
+util.func public @clone_linalg_ext_gather_attention(
+  %arg0: tensor<?x32x2x32x8x128xf16>, %arg1: tensor<8x4x1x128xf16>,
+  %arg2: tensor<8x4x1x?x32xf16>, %arg3: index,
+  %arg4: tensor<1x?xi64>, %arg5: index) -> tensor<8x4x1x128xf16> {
+  %0 = tensor.empty(%arg5) : tensor<1x?x32x8x128xf16>
+  %extracted_slice = tensor.extract_slice %arg0[0, 31, 1, 0, 0, 0] [%arg3, 1, 1, 32, 8, 128] [1, 1, 1, 1, 1, 1] : tensor<?x32x2x32x8x128xf16> to tensor<?x32x8x128xf16>
+  %extracted_slice_0 = tensor.extract_slice %arg0[0, 31, 0, 0, 0, 0] [%arg3, 1, 1, 32, 8, 128] [1, 1, 1, 1, 1, 1] : tensor<?x32x2x32x8x128xf16> to tensor<?x32x8x128xf16>
+
+  %3 = flow.dispatch.region -> (tensor<8x4x1x128xf16>) {
+    %4 = tensor.empty() : tensor<8x4x1x128xf16>
+    %cst = arith.constant 8.837890e-02 : f16
+    %1 = iree_linalg_ext.gather dimension_map = [0]
+      ins(%extracted_slice_0, %arg4 : tensor<?x32x8x128xf16>, tensor<1x?xi64>)
+      outs(%0 : tensor<1x?x32x8x128xf16>) -> tensor<1x?x32x8x128xf16>
+    %2 = iree_linalg_ext.gather dimension_map = [0]
+      ins(%extracted_slice, %arg4 : tensor<?x32x8x128xf16>, tensor<1x?xi64>)
+      outs(%0 : tensor<1x?x32x8x128xf16>) -> tensor<1x?x32x8x128xf16>
+    %5 = iree_linalg_ext.attention {
+      indexing_maps = [
+        affine_map<(d0, d1, d2, d3, d4, d5, d6, d7) -> (d0, d1, d2, d4)>,
+        affine_map<(d0, d1, d2, d3, d4, d5, d6, d7) -> (d5, d6, d7, d0, d4)>,
+        affine_map<(d0, d1, d2, d3, d4, d5, d6, d7) -> (d5, d6, d7, d0, d3)>,
+        affine_map<(d0, d1, d2, d3, d4, d5, d6, d7) -> ()>,
+        affine_map<(d0, d1, d2, d3, d4, d5, d6, d7) -> (d0, d1, d5, d6, d7)>,
+        affine_map<(d0, d1, d2, d3, d4, d5, d6, d7) -> (d0, d1, d2, d3)>]}
+      ins(%arg1, %1, %2, %cst, %arg2 : tensor<8x4x1x128xf16>, tensor<1x?x32x8x128xf16>, tensor<1x?x32x8x128xf16>, f16, tensor<8x4x1x?x32xf16>)
+      outs(%4 : tensor<8x4x1x128xf16>) {
+    ^bb0(%arg6: f32):
+      iree_linalg_ext.yield %arg6 : f32
+    } -> tensor<8x4x1x128xf16>
+    flow.return %5 : tensor<8x4x1x128xf16>
+  }
+  util.return %3 : tensor<8x4x1x128xf16>
+}
