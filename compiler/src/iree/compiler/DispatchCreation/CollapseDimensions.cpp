@@ -166,7 +166,7 @@ static SmallVector<ReassociationIndices> getCollapsibleLoops(Operation *op) {
   return contiguousLoops;
 }
 
-/// Returns true if the given op is collapsable.
+/// Returns true if the given op is collapsible.
 static bool isEligibleForCollapse(Operation *op) {
   if (isa<IREE::LinalgExt::AttentionOp, linalg::FillOp>(op)) {
     return true;
@@ -276,12 +276,12 @@ getConsumerLoopToProducerLoopsMap(OpOperand &operand) {
 namespace {
 class CollapseInfo {
 public:
-  using CollapsableLoopsSet = llvm::SmallSetVector<int64_t, 8>;
+  using CollapsibleLoopsSet = llvm::SmallSetVector<int64_t, 8>;
 
   CollapseInfo() = default;
   CollapseInfo(Operation *op) {
     reassociation = DispatchCreation::getCollapsibleLoops(op);
-    collapsableLoops = getCollapsedFromReassociation(reassociation);
+    collapsibleLoops = getCollapsedFromReassociation(reassociation);
   }
 
   // Print the current operation & reassociation indicies
@@ -290,14 +290,14 @@ public:
   // Debug print the current operation & reassociation indicies
   void dump() const;
 
-  // Update CollapseInfo to ensure that all dimensions collapsable in `this` are
-  // also collapsable in `otherInfo`. This means:
-  // 1. Any dimension not collapsable in `otherInfo` should not be
-  // collapsable in `this`
-  // 2. For any pair of dimensions in `this`, if they are collapsable in
-  // `otherInfo`, they must be collapsable into the same dimension in
-  // `otherInfo` to be collapsable into the same dimension in `this`.
-  // Returns true if the operation modified the number of collapsable loops.
+  // Update CollapseInfo to ensure that all dimensions collapsible in `this` are
+  // also collapsible in `otherInfo`. This means:
+  // 1. Any dimension not collapsible in `otherInfo` should not be
+  // collapsible in `this`
+  // 2. For any pair of dimensions in `this`, if they are collapsible in
+  // `otherInfo`, they must be collapsible into the same dimension in
+  // `otherInfo` to be collapsible into the same dimension in `this`.
+  // Returns true if the operation modified the number of collapsible loops.
   bool updateFromOther(FailureOr<AffineMap> otherToThisMap,
                        const CollapseInfo &otherInfo);
 
@@ -306,10 +306,10 @@ public:
   // accessed by other to be uncollapsible.
   bool updateFromUncollapsible(Operation *op, OpOperand *operand);
 
-  // Get `collapsableLoops` after applying the transformation provided by `map`.
-  // Note: doesn't modify `collapsableLoops`, the tranformation is applied to a
+  // Get `collapsibleLoops` after applying the transformation provided by `map`.
+  // Note: doesn't modify `collapsibleLoops`, the tranformation is applied to a
   // copy.
-  CollapsableLoopsSet getTransformedCollapsableLoops(AffineMap map) const;
+  CollapsibleLoopsSet getTransformedCollapsibleLoops(AffineMap map) const;
 
   // Get `reassociation` after applying the transformation provided by `map`.
   SmallVector<ReassociationIndices>
@@ -317,14 +317,14 @@ public:
 
   // Clear internal data and returns if anything changed.
   bool clear() {
-    bool isNotEmpty = reassociation.empty() || collapsableLoops.empty();
+    bool isNotEmpty = reassociation.empty() || collapsibleLoops.empty();
     reassociation.clear();
-    collapsableLoops.clear();
+    collapsibleLoops.clear();
     return isNotEmpty;
   }
 
-  const CollapsableLoopsSet &getCollapsibleLoops() const {
-    return collapsableLoops;
+  const CollapsibleLoopsSet &getCollapsibleLoops() const {
+    return collapsibleLoops;
   }
 
   const SmallVector<ReassociationIndices> &getReassocation() const {
@@ -333,9 +333,9 @@ public:
 
 private:
   // Get a set of all elements in `reassociation`
-  static CollapsableLoopsSet
+  static CollapsibleLoopsSet
   getCollapsedFromReassociation(ArrayRef<ReassociationIndices> reassociation) {
-    CollapsableLoopsSet collapsed;
+    CollapsibleLoopsSet collapsed;
     for (auto &indicies : reassociation) {
       for (int64_t index : indicies) {
         collapsed.insert(index);
@@ -345,7 +345,7 @@ private:
   }
 
   // Update `reassociation` by removing indicies that are no longer in
-  // `collapsableLoops` and spliting the reassociation indicies accordingly
+  // `collapsibleLoops` and spliting the reassociation indicies accordingly
   void updateReassociation();
 
 private:
@@ -353,14 +353,14 @@ private:
   // can be collapsed together.
   SmallVector<ReassociationIndices> reassociation;
 
-  // Note: `collapsableLoops` does not directly map to `reassociation`
+  // Note: `collapsibleLoops` does not directly map to `reassociation`
   // because parallel and reduction iteration dimensions must be kept separate.
-  CollapsableLoopsSet collapsableLoops;
+  CollapsibleLoopsSet collapsibleLoops;
 };
 } // namespace
 
-// Removes any indicies in `reassociation` that are not in `collapsableLoops`,
-// The reassociation indicies are split along the uncollapsable element because
+// Removes any indicies in `reassociation` that are not in `collapsibleLoops`,
+// The reassociation indicies are split along the uncollapsible element because
 // the dims aren't contiguous and cannot be collapsed. Single element
 // reassociation indicies are cleaned up.
 void CollapseInfo::updateReassociation() {
@@ -370,14 +370,14 @@ void CollapseInfo::updateReassociation() {
     // Holds dimensions that should be collapsed together
     ReassociationIndices newIndicies;
     for (int64_t index : indicies) {
-      // This index is collapsable and should be kept in the reassociation
+      // This index is collapsible and should be kept in the reassociation
       // indicies.
-      if (collapsableLoops.contains(index)) {
+      if (collapsibleLoops.contains(index)) {
         newIndicies.push_back(index);
         continue;
       }
 
-      // Because `index` isn't collapsable, the indicies in `newIndicies` are no
+      // Because `index` isn't collapsible, the indicies in `newIndicies` are no
       // longer adjacent to the upcoming indicies. If there is >1 index to
       // collapse, add it to the new reassociation. Otherwise, discard it
       // because there is no dimension to collapse with.
@@ -394,23 +394,23 @@ void CollapseInfo::updateReassociation() {
   reassociation = std::move(newReassociation);
 }
 
-// Given an AffineMap `map` get the transformed `collapsableLoops`. For example,
+// Given an AffineMap `map` get the transformed `collapsibleLoops`. For example,
 // if this `CollapseInfo` represents a elementwise linalg generic operating on a
-// 3d tensor (so its collapsableLoops might be {0, 1, 2}), the map would be used
+// 3d tensor (so its collapsibleLoops might be {0, 1, 2}), the map would be used
 // to map the loops to the iteration space of its producer or consumer.
 //
 // Consider it's consumer accesses the result of said operation with
 // affine_map<(d0, d1, d2) -> (d1, d2, d5)>
 //
 // Then:
-// collapsableLoops = {0, 1, 2}
+// collapsibleLoops = {0, 1, 2}
 // map = affine_map<(d0, d1, d2) -> (d1, d2, d5)>
 //
-// Therefore, the collapsable loops with respect to the consumer is {1, 2, 5}.
-CollapseInfo::CollapsableLoopsSet
-CollapseInfo::getTransformedCollapsableLoops(AffineMap map) const {
-  CollapsableLoopsSet transformedLoops;
-  for (auto index : collapsableLoops) {
+// Therefore, the collapsible loops with respect to the consumer is {1, 2, 5}.
+CollapseInfo::CollapsibleLoopsSet
+CollapseInfo::getTransformedCollapsibleLoops(AffineMap map) const {
+  CollapsibleLoopsSet transformedLoops;
+  for (auto index : collapsibleLoops) {
     assert(index < map.getNumResults() && "index has no valid mapping");
     auto dimExpr = dyn_cast<AffineDimExpr>(map.getResult(index));
     if (!dimExpr) {
@@ -444,8 +444,8 @@ bool CollapseInfo::updateFromOther(FailureOr<AffineMap> otherToThisMap,
     return this->clear();
   }
 
-  CollapsableLoopsSet otherCollapsible =
-      otherInfo.getTransformedCollapsableLoops(otherToThisMap.value());
+  CollapsibleLoopsSet otherCollapsible =
+      otherInfo.getTransformedCollapsibleLoops(otherToThisMap.value());
 
   SmallVector<ReassociationIndices> otherReassoc =
       otherInfo.getTransformedReassociation(otherToThisMap.value());
@@ -458,10 +458,10 @@ bool CollapseInfo::updateFromOther(FailureOr<AffineMap> otherToThisMap,
     }
   }
 
-  // Remove all collapsable loops in `this` that both exist and are not
-  // collapsable in `other` (set intersect)
-  bool didChange = collapsableLoops.remove_if([&](long elem) -> bool {
-    // Exists and is collapsable
+  // Remove all collapsible loops in `this` that both exist and are not
+  // collapsible in `other` (set intersect)
+  bool didChange = collapsibleLoops.remove_if([&](long elem) -> bool {
+    // Exists and is collapsible
     if (otherCollapsible.contains(elem)) {
       return false;
     }
@@ -474,13 +474,13 @@ bool CollapseInfo::updateFromOther(FailureOr<AffineMap> otherToThisMap,
     return true;
   });
 
-  // Now update the reassociation indicies given the updated `collapsableLoops`
-  // and `otherCollapsableMap`.
+  // Now update the reassociation indicies given the updated `collapsibleLoops`
+  // and `otherCollapsibleMap`.
   // The idea is to reconstruct the reassociation indicies, and at each index:
-  // (1) If `index` IS NOT in `collapsableLoops`, split `indicies` and don't add
+  // (1) If `index` IS NOT in `collapsibleLoops`, split `indicies` and don't add
   // `index` to either.
   //
-  // (2) If `index` IS in `collapsableLoops` but `otherCollapseMap` maps
+  // (2) If `index` IS in `collapsibleLoops` but `otherCollapseMap` maps
   // `index` to a different collapsed loop then the other indicies,  split
   // `indicies` and insert `index` into the new one.
   //
@@ -500,8 +500,8 @@ bool CollapseInfo::updateFromOther(FailureOr<AffineMap> otherToThisMap,
     // Holds dimensions that should be collapsed together
     ReassociationIndices newIndicies;
     for (int64_t index : indicies) {
-      if (!collapsableLoops.contains(index)) {
-        // (1) Because `index` isn't collapsable, the indicies in `newIndicies`
+      if (!collapsibleLoops.contains(index)) {
+        // (1) Because `index` isn't collapsible, the indicies in `newIndicies`
         // are no longer adjacent to the upcoming indicies. If there is >1 index
         // to collapse, add it to the new reassociation. Otherwise, discard it
         // because there is no dimension to collapse with.
@@ -515,11 +515,11 @@ bool CollapseInfo::updateFromOther(FailureOr<AffineMap> otherToThisMap,
         // (2) `index` does not exist in `other`.
         newIndicies.push_back(index);
       } else if (collapseIntoIdx == kUninitialized) {
-        // (3) First occurance of collapsable loop, set collapseIntoIdx.
+        // (3) First occurance of collapsible loop, set collapseIntoIdx.
         collapseIntoIdx = otherCollapseMap.at(index);
         newIndicies.push_back(index);
       } else if (otherCollapseMap.at(index) != collapseIntoIdx) {
-        // (4) `index` is collapsable but not collapsable into the other loops.
+        // (4) `index` is collapsible but not collapsible into the other loops.
         // So, split them and look for other loops to collapse `index` into.
         didChange = true;
         if (newIndicies.size() > 1) {
@@ -529,7 +529,7 @@ bool CollapseInfo::updateFromOther(FailureOr<AffineMap> otherToThisMap,
         collapseIntoIdx = otherCollapseMap[index];
         newIndicies.push_back(index);
       } else {
-        // (5) `index` is collapsable and can be collapsed into
+        // (5) `index` is collapsible and can be collapsed into
         // `collapseIntoIndex`.
         newIndicies.push_back(index);
       }
@@ -542,7 +542,7 @@ bool CollapseInfo::updateFromOther(FailureOr<AffineMap> otherToThisMap,
 
   if (didChange) {
     reassociation = std::move(newReassociation);
-    collapsableLoops = getCollapsedFromReassociation(reassociation);
+    collapsibleLoops = getCollapsedFromReassociation(reassociation);
   }
   return didChange;
 }
@@ -554,14 +554,14 @@ bool CollapseInfo::updateFromUncollapsible(Operation *op, OpOperand *operand) {
                       : fusionOp.getIndexingMapMatchingResult(
                             cast<OpResult>(operand->get()));
 
-  CollapseInfo::CollapsableLoopsSet uncollapsable;
+  CollapseInfo::CollapsibleLoopsSet uncollapsible;
   for (auto expr : map.getResults()) {
-    uncollapsable.insert(cast<AffineDimExpr>(expr).getPosition());
+    uncollapsible.insert(cast<AffineDimExpr>(expr).getPosition());
   }
-  auto initialSize = collapsableLoops.size();
-  collapsableLoops.set_subtract(uncollapsable);
+  auto initialSize = collapsibleLoops.size();
+  collapsibleLoops.set_subtract(uncollapsible);
   updateReassociation();
-  return initialSize != collapsableLoops.size();
+  return initialSize != collapsibleLoops.size();
 }
 
 void CollapseInfo::print(raw_ostream &os) const {
@@ -577,8 +577,8 @@ void CollapseInfo::print(raw_ostream &os) const {
   os << "]";
   os << "\n";
 
-  os << "Collapsable: {";
-  llvm::interleaveComma(collapsableLoops, os);
+  os << "Collapsible: {";
+  llvm::interleaveComma(collapsibleLoops, os);
   os << "}";
 }
 
@@ -803,8 +803,8 @@ updateConsumersFromProducers(ArrayRef<Operation *> slice,
         continue;
       }
 
-      // If we can't find the op, the tensor is not collapsable. So, consider
-      // all the dimensions of the producer to be uncollapsable.
+      // If we can't find the op, the tensor is not collapsible. So, consider
+      // all the dimensions of the producer to be uncollapsible.
       if (!opMap.contains(producerOp)) {
         didChange |= consumerInfo.updateFromUncollapsible(consumerOp, operand);
         continue;
@@ -841,8 +841,8 @@ updateProducersFromConsumers(ArrayRef<Operation *> slice,
         continue;
       }
 
-      // If we can't find the op, the tensor is not collapsable. So, consider
-      // all the dimensions of the consumer to be uncollapsable.
+      // If we can't find the op, the tensor is not collapsible. So, consider
+      // all the dimensions of the consumer to be uncollapsible.
       if (!opMap.contains(consumerOp)) {
         didChange |= producerInfo.updateFromUncollapsible(producerOp, &operand);
         continue;
@@ -851,7 +851,7 @@ updateProducersFromConsumers(ArrayRef<Operation *> slice,
       // Get a mapping from the consumer's iteration space to the producer's.
       const CollapseInfo &consumerInfo = opMap.at(consumerOp);
 
-      // Only loops collapsable in both the consumer and producer may be
+      // Only loops collapsible in both the consumer and producer may be
       // collapsed.
       FailureOr<AffineMap> consumerToProducerMap =
           getConsumerLoopToProducerLoopsMap(operand);
@@ -891,7 +891,7 @@ collapseDimensionsForDispatch(IRRewriter &rewriter,
   SetVector<Operation *> slice;
   getBackwardSlice(rootOp.value(), &slice, sliceOptions);
 
-  // Step 3. Populate each op's info with a maximally collapsable reassociation
+  // Step 3. Populate each op's info with a maximally collapsible reassociation
   // indicies
   llvm::DenseMap<Operation *, CollapseInfo> opMap;
   opMap.reserve(slice.size());
@@ -990,7 +990,7 @@ collapseDimensionsForDispatch(IRRewriter &rewriter,
             });
     if (failed(maybeReplacements)) {
       opToCollapse->emitWarning(
-          "failed to collapse op which should be collapsable");
+          "failed to collapse op which should be collapsible");
       continue;
     }
     didCollapse = true;
