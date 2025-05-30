@@ -989,6 +989,8 @@ collapseDimensionsForDispatch(IRRewriter &rewriter,
               return failure();
             });
     if (failed(maybeReplacements)) {
+      opToCollapse->emitWarning(
+          "failed to collapse op which should be collapsable");
       continue;
     }
     didCollapse = true;
