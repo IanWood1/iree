@@ -178,48 +178,85 @@ struct BubbleExpandThroughExtract final
 
     auto srcType = extractOp.getSourceType();
     auto extractedType = extractOp.getType();
-    auto expandedType = expandOp.getType();
+
+    // TODO: handle unranked
+    RankedTensorType expandedType = cast<RankedTensorType>(expandOp.getType());
 
     if (srcType.getRank() != extractedType.getRank()) {
       return rewriter.notifyMatchFailure(
           extractOp, "Rank reducing extract_slice not supported");
     }
 
-    if (!srcType.hasStaticShape() || !extractedType.hasStaticShape() ||
-        !expandedType.hasStaticShape()) {
-      return failure();
-    }
+    // TODO: fix this.
+
+    // if (!srcType.hasStaticShape() || !extractedType.hasStaticShape() ||
+    //     !expandedType.hasStaticShape()) {
+    //   return failure();
+    // }
 
     auto reassoc = expandOp.getReassociationIndices();
-    for (auto i : llvm::seq<uint64_t>(0, extractedType.getRank())) {
-      if (reassoc[i].size() == 1) {
-        continue;
-      }
+    // for (auto i : llvm::seq<uint64_t>(0, extractedType.getRank())) {
+    //   if (reassoc[i].size() == 1) {
+    //     continue;
+    //   }
+    //
+    //   if (srcType.getShape()[i] != extractedType.getShape()[i]) {
+    //     return rewriter.notifyMatchFailure(
+    //         extractOp, "Extract modifies the expanded dimension");
+    //   }
+    // }
 
-      if (srcType.getShape()[i] != extractedType.getShape()[i]) {
-        return rewriter.notifyMatchFailure(
-            extractOp, "Extract modifies the expanded dimension");
-      }
-    }
+    auto zeroAttr = rewriter.getIndexAttr(0);
+    auto oneAttr = rewriter.getIndexAttr(1);
+
+    SmallVector<OpFoldResult> oldOffsets = extractOp.getMixedOffsets();
+    SmallVector<OpFoldResult> oldSizes = extractOp.getMixedSizes();
+    SmallVector<OpFoldResult> oldStrides = extractOp.getMixedStrides();
+    ArrayRef<int64_t> expandedShape = expandedType.getShape();
 
     SmallVector<int64_t> newExpandShape;
-    SmallVector<int64_t> offsets;
-    SmallVector<int64_t> sizes;
-    SmallVector<int64_t> strides;
-    for (auto [inDim, outDims] : llvm::enumerate(reassoc)) {
+    SmallVector<OpFoldResult> offsets;
+    SmallVector<OpFoldResult> sizes;
+    SmallVector<OpFoldResult> strides;
+    for (const auto &[inDim, outDims] : llvm::enumerate(reassoc)) {
       if (outDims.size() == 1) {
         newExpandShape.push_back(srcType.getShape()[inDim]);
-        offsets.push_back(extractOp.getStaticOffsets()[inDim]);
-        sizes.push_back(extractOp.getStaticSizes()[inDim]);
-        strides.push_back(extractOp.getStaticStrides()[inDim]);
-      } else {
-        for (auto outDim : outDims) {
-          newExpandShape.push_back(expandedType.getShape()[outDim]);
-          offsets.push_back(0);
-          sizes.push_back(expandedType.getShape()[outDim]);
-          strides.push_back(1);
-        }
+        offsets.push_back(oldOffsets[inDim]);
+        sizes.push_back(oldSizes[inDim]);
+        strides.push_back(oldStrides[inDim]);
+        continue;
       }
+      int64_t product = 1;
+      for (auto outDim : llvm::drop_end(outDims)) {
+        int64_t expandedDim = expandedShape[outDim];
+        assert(!ShapedType::isDynamic(expandedDim));
+
+        product *= expandedDim;
+        newExpandShape.push_back(expandedDim);
+        offsets.push_back(zeroAttr);
+        sizes.push_back(rewriter.getIndexAttr(expandedDim));
+        strides.push_back(oneAttr);
+      }
+
+      offsets.push_back(zeroAttr);
+      strides.push_back(oneAttr);
+
+      // int64_t expandedDim = expandedShape.back();
+      AffineExpr s0, s1;
+      bindSymbols(rewriter.getContext(), s0, s1);
+      OpFoldResult dim = linalg::createFoldedDimOp(
+          rewriter, extractOp.getLoc(), extractOp.getSource(), inDim);
+      dim.dump();
+      OpFoldResult expandedDim = affine::makeComposedFoldedAffineApply(
+          rewriter, extractOp.getLoc(), s0.floorDiv(s1),
+          {dim, rewriter.getIndexAttr(product)});
+      OpFoldResult extractedDim = affine::makeComposedFoldedAffineApply(
+          rewriter, extractOp.getLoc(), s0.floorDiv(s1),
+          {oldSizes[inDim], rewriter.getIndexAttr(product)});
+      expandedDim.dump();
+      newExpandShape.push_back(
+          getConstantIntValue(expandedDim).value_or(ShapedType::kDynamic));
+      sizes.push_back(extractedDim);
     }
 
     Type newExpandType =
@@ -228,8 +265,7 @@ struct BubbleExpandThroughExtract final
         expandOp.getLoc(), newExpandType, extractOp.getSource(), reassoc);
 
     rewriter.replaceOpWithNewOp<tensor::ExtractSliceOp>(
-        expandOp, expandedType, newExpand, ValueRange{}, ValueRange{},
-        ValueRange{}, offsets, sizes, strides);
+        expandOp, expandedType, newExpand, offsets, sizes, strides);
     return success();
   }
 };

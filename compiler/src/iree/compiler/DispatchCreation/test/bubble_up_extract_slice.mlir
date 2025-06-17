@@ -219,3 +219,23 @@ func.func @bubble_up_expand_of_extract_of_expand(%arg0: tensor<131072xi64>, %arg
 //  CHECK-SAME:       ins(%[[SLICE0]], %[[EXPAND2]] :
 //  CHECK-SAME:       outs(%[[EMPTY]] :
 //       CHECK:   return %[[GENERIC]]
+
+// -----
+
+util.func public @bubble_slice_static(%arg0 : tensor<1024xf16>) -> (tensor<32x10xf16>) {
+  %extracted_slice = tensor.extract_slice %arg0[0] [320] [1] : tensor<1024xf16> to tensor<320xf16>
+  %expanded = tensor.expand_shape %extracted_slice[[0, 1]] output_shape [32, 10] : tensor<320xf16> into tensor<32x10xf16>
+  util.return %expanded : tensor<32x10xf16>
+}
+// CHECK-LABEL: util.func public @bubble_slice_static
+
+// -----
+
+util.func public @bubble_slice_dynamic(%arg0 : tensor<?xf16>, %val : index) -> (tensor<32x?xf16>) {
+  %extracted_slice = tensor.extract_slice %arg0[0] [%val] [1] : tensor<?xf16> to tensor<?xf16>
+  %cst32 = arith.constant 32 : index
+  %div = arith.divsi %val, %cst32 : index
+  %expanded_239 = tensor.expand_shape %extracted_slice[[0, 1]] output_shape [32, %div] : tensor<?xf16> into tensor<32x?xf16>
+  util.return %expanded_239 : tensor<32x?xf16>
+}
+// CHECK-LABEL: util.func public @bubble_slice_dynamic
