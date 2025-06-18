@@ -115,6 +115,18 @@ void GenericVectorizationPass::runOnOperation() {
   auto funcOp = getOperation();
 
   IRRewriter rewriter(context);
+
+  funcOp.walk([&](tensor::ConcatOp concatOp) {
+    IRRewriter::InsertionGuard g(rewriter);
+    rewriter.setInsertionPoint(concatOp);
+    FailureOr<SmallVector<Value>> decomposed =
+        concatOp.decomposeOperation(rewriter);
+    if (failed(decomposed)) {
+      return;
+    }
+    return rewriter.replaceOp(concatOp, decomposed.value()[0]);
+  });
+
   SmallVector<Operation *> candidates;
   funcOp.walk([&](Operation *op) {
     if (isa<linalg::LinalgOp>(op)) {
