@@ -142,6 +142,8 @@ void GenericVectorizationPass::runOnOperation() {
       candidates.push_back(op);
     } else if (isa<IREE::LinalgExt::GatherOp>(op)) {
       candidates.push_back(op);
+    } else if (isa<tensor::InsertSliceOp>(op)) {
+      candidates.push_back(op);
     }
   });
 
