@@ -43,6 +43,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Transforms/RegionUtils.h"
 
 #define DEBUG_TYPE "iree-dispatch-creation-form-dispatch-regions"
 
@@ -993,8 +994,8 @@ createFusionGroups(TensorDimTrackingRewriter &rewriter,
         }
       }
 
-      if (failed(moveOperandDefs(rewriter, consumer, regionOp, dominanceInfo,
-                                 regionOp.getOperation()))) {
+      if (failed(moveOperationDependencies(rewriter, consumer, regionOp,
+                                           dominanceInfo))) {
         continue;
       }
 
