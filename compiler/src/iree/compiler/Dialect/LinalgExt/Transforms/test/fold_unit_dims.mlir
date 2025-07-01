@@ -39,3 +39,17 @@ util.func public @gather_batch_and_slice_dims(%source: tensor<4x4x1x4xf16>, %ind
 // CHECK: iree_linalg_ext.gather
 // CHECK-SAME: ins(%[[SOURCE_SLICE]], %[[INDICES_BATCH]]
 // CHECK-SAME: outs(%[[OUTPUT_SLICE]]
+
+// -----
+
+util.func public @gather_batch_and_slice_dims(%slice: tensor<4x1x1x4xf16>, %indices: tensor<4x1x2xi64>) -> tensor<4x4x1x4xf16> {
+  %empty = tensor.empty() : tensor<4x4x1x4xf16>
+  %0 = iree_linalg_ext.scatter dimension_map = [0, 1] unique_indices(true)
+          ins(%slice, %indices: tensor<4x1x1x4xf16>, tensor<4x1x2xi64>)
+          outs(%empty: tensor<4x4x1x4xf16>){
+  ^bb0(%in : f16, %out : f16):
+    iree_linalg_ext.yield %in : f16
+  }-> tensor<4x4x1x4xf16>
+  util.return %0 : tensor<4x4x1x4xf16>
+}
+
