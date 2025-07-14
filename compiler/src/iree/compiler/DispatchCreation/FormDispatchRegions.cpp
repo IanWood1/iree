@@ -807,7 +807,6 @@ isFusableWithProducer(OpOperand &operand,
     }
   }
 
-  assert(areOpsFusable(producer, consumer, rootOuterParallelLoops));
   return true;
 }
 
