@@ -17,6 +17,7 @@
 #include "iree/compiler/Dialect/LinalgExt/Transforms/Transforms.h"
 #include "iree/compiler/Dialect/LinalgExt/Utils/IndexingUtils.h"
 #include "iree/compiler/Dialect/LinalgExt/Utils/Utils.h"
+#include "iree/compiler/Dialect/Util/IR/UtilTypes.h"
 #include "iree/compiler/DispatchCreation/FusionUtils.h"
 #include "iree/compiler/DispatchCreation/Passes.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
@@ -159,6 +160,39 @@ struct SwapExtractSliceOfFill final
   }
 };
 
+FailureOr<IREE::Util::IntegerDivisibility> getDivisibility(Value val) {
+  Operation *op = val.getDefiningOp();
+  if (!op) {
+    llvm::dbgs() << "not an operation!\n";
+    return failure();
+  }
+
+  auto divInterface = dyn_cast<IREE::Util::InferIntDivisibilityOpInterface>(op);
+  if (!divInterface) {
+    llvm::dbgs() << op->getName() << " interface not supported!\n";
+    return failure();
+  }
+
+  SmallVector<IREE::Util::IntegerDivisibility> argDiv;
+  for (Value operand : op->getOperands()) {
+    FailureOr<IREE::Util::IntegerDivisibility> maybeDiv =
+        getDivisibility(operand);
+    if (failed(maybeDiv)) {
+      argDiv.push_back(IREE::Util::IntegerDivisibility{});
+    } else {
+      argDiv.push_back(std::move(maybeDiv.value()));
+    }
+  }
+
+  llvm::DenseMap<Value, IREE::Util::IntegerDivisibility> map;
+  divInterface.inferResultDivisibility(
+      argDiv, [&](Value v, const IREE::Util::IntegerDivisibility &div) {
+        map[v] = div;
+        return;
+      });
+  return map[val];
+}
+
 /// Bubbles a `tensor.expand_shape` op through a `tensor.extract_slice` op. This
 /// pattern only gets applied when the `extract_slice` doesn't modify dimensions
 /// that are expanded by the `expand_shape` and none of the expanded dimensions
@@ -191,11 +225,31 @@ struct BubbleExpandThroughExtract final
         ++droppedDimCount;
         continue;
       }
-      if (reassoc[i - droppedDimCount].size() == 1) {
+
+      ReassociationIndicesRef expandReassoc = reassoc[i - droppedDimCount];
+      if (expandReassoc.size() == 1) {
         continue;
       }
-      if (ShapedType::isDynamic(extractSrcShape[i]) ||
-          extractSrcShape[i] != extractDstShape[i - droppedDimCount]) {
+      if (ShapedType::isDynamic(extractSrcShape[i])) {
+        if (ShapedType::isStatic(extractDstShape[i - droppedDimCount])) {
+          return failure();
+        }
+
+        SmallVector<Value> dims;
+        if (failed(IREE::Flow::getOptimizedDynamicResultDims(
+                rewriter, extractOp, dims))) {
+          return failure();
+        }
+        SmallVector<OpFoldResult> mixedOptimizedDims =
+            getMixedValues(extractDstShape, dims, rewriter);
+        if (mixedOptimizedDims[i - droppedDimCount] !=
+            extractOp.getMixedSizes()[i]) {
+          dims[i].dump();
+          return failure();
+        }
+      }
+
+      if (extractSrcShape[i] != extractDstShape[i - droppedDimCount]) {
         return rewriter.notifyMatchFailure(
             extractOp, "Extract modifies the expanded dimension");
       }
@@ -225,11 +279,13 @@ struct BubbleExpandThroughExtract final
 
     RankedTensorType expandedType = expandOp.getResultType();
     ArrayRef<int64_t> expandedShape = expandedType.getShape();
+    SmallVector<OpFoldResult> mixedExpandedShape =
+        expandOp.getMixedOutputShape();
     auto zeroAttr = rewriter.getIndexAttr(0);
     auto oneAttr = rewriter.getIndexAttr(1);
 
-    // Find the new offsets/sizes/strides for the `extract_slice `& new expanded
-    // shape for the `expand_shape`.
+    // Find the new offsets/sizes/strides for the `extract_slice` and new
+    // expanded shape for the `expand_shape`.
     SmallVector<int64_t> newExpandShape;
     SmallVector<OpFoldResult> newOffsets;
     SmallVector<OpFoldResult> newSizes;
@@ -246,10 +302,11 @@ struct BubbleExpandThroughExtract final
       }
       for (auto outDim : outDims) {
         int64_t expandedDim = expandedShape[outDim - droppedDimCount];
-        assert(ShapedType::isStatic(expandedDim));
         newExpandShape.push_back(expandedDim);
         newOffsets.push_back(zeroAttr);
-        newSizes.push_back(rewriter.getIndexAttr(expandedDim));
+        // TODO!!! mixedExpandedShape must dominate the extract slice in the
+        // dynamic case.
+        newSizes.push_back(mixedExpandedShape[outDim - droppedDimCount]);
         newStrides.push_back(oneAttr);
       }
     }
