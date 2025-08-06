@@ -160,39 +160,6 @@ struct SwapExtractSliceOfFill final
   }
 };
 
-FailureOr<IREE::Util::IntegerDivisibility> getDivisibility(Value val) {
-  Operation *op = val.getDefiningOp();
-  if (!op) {
-    llvm::dbgs() << "not an operation!\n";
-    return failure();
-  }
-
-  auto divInterface = dyn_cast<IREE::Util::InferIntDivisibilityOpInterface>(op);
-  if (!divInterface) {
-    llvm::dbgs() << op->getName() << " interface not supported!\n";
-    return failure();
-  }
-
-  SmallVector<IREE::Util::IntegerDivisibility> argDiv;
-  for (Value operand : op->getOperands()) {
-    FailureOr<IREE::Util::IntegerDivisibility> maybeDiv =
-        getDivisibility(operand);
-    if (failed(maybeDiv)) {
-      argDiv.push_back(IREE::Util::IntegerDivisibility{});
-    } else {
-      argDiv.push_back(std::move(maybeDiv.value()));
-    }
-  }
-
-  llvm::DenseMap<Value, IREE::Util::IntegerDivisibility> map;
-  divInterface.inferResultDivisibility(
-      argDiv, [&](Value v, const IREE::Util::IntegerDivisibility &div) {
-        map[v] = div;
-        return;
-      });
-  return map[val];
-}
-
 /// Bubbles a `tensor.expand_shape` op through a `tensor.extract_slice` op. This
 /// pattern only gets applied when the `extract_slice` doesn't modify dimensions
 /// that are expanded by the `expand_shape` and none of the expanded dimensions
@@ -220,6 +187,15 @@ struct BubbleExpandThroughExtract final
     const SmallVector<ReassociationIndices, 4> reassoc =
         expandOp.getReassociationIndices();
     int64_t droppedDimCount = 0;
+
+    SmallVector<Value> dims;
+    if (failed(IREE::Flow::getOptimizedDynamicResultDims(rewriter, extractOp,
+                                                         dims))) {
+      return failure();
+    }
+    SmallVector<OpFoldResult> mixedOptimizedDims =
+        getMixedValues(extractDstShape, dims, rewriter);
+
     for (uint64_t i = 0; i < extractSrcRank; ++i) {
       if (droppedDims.test(i)) {
         ++droppedDimCount;
@@ -234,17 +210,8 @@ struct BubbleExpandThroughExtract final
         if (ShapedType::isStatic(extractDstShape[i - droppedDimCount])) {
           return failure();
         }
-
-        SmallVector<Value> dims;
-        if (failed(IREE::Flow::getOptimizedDynamicResultDims(
-                rewriter, extractOp, dims))) {
-          return failure();
-        }
-        SmallVector<OpFoldResult> mixedOptimizedDims =
-            getMixedValues(extractDstShape, dims, rewriter);
         if (mixedOptimizedDims[i - droppedDimCount] !=
             extractOp.getMixedSizes()[i]) {
-          dims[i].dump();
           return failure();
         }
       }
