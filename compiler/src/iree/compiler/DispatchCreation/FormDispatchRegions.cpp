@@ -383,6 +383,7 @@ static bool areOpsFusable(Operation *producer, Operation *consumer,
 static bool makeConsumerFusableViaInterchange(
     OpOperand &fusableOperand,
     const llvm::SmallBitVector &rootOuterParallelLoops) {
+  llvm::dbgs() << "ATTEMPTED :(\n";
   auto producer =
       fusableOperand.get()
           .getDefiningOp<IREE::LinalgExt::LinalgFusionOpInterface>();
@@ -411,45 +412,25 @@ static bool makeConsumerFusableViaInterchange(
   AffineMap consumerIndexingMap =
       consumer.getMatchingIndexingMap(&fusableOperand);
 
-  // Since the iteration space of the consumer is going to be permuted
-  // to make it match with the indexing map in the producer, the interchange
-  // requires the indexing map in the consumer to be a permutation.
-  // If the producer indexing map and consumer indexing map are the same,
-  // then the permutation of iteration space becomes a no-op, in which
-  // case the permutation wasnt required for fusion. Return false here
-  // to indicate that the permutation is not going to "enhance" the
-  // fusion opportunities.
-  if (!consumerIndexingMap.isPermutation() ||
-      producerIndexingMap == consumerIndexingMap) {
-    return false;
-  }
-  OpResult result = cast<OpResult>(consumer.getResult(0));
-  if (!consumer.getIndexingMapMatchingResult(result).isPermutation()) {
-    return false;
-  }
+  producer->dumpPretty();
 
-  // For now this is restricting that all indexing maps corresponding to the
-  // input are same as the indexing map of the fused operand, or are projected
-  // permutations. This avoids ping-ponging between different iteration space
-  // permutations without having any way to pick which is better.
-  if (!llvm::all_of(
-          consumer.getDpsInputOperands(), [&](OpOperand *inputOperand) {
-            AffineMap map = consumer.getMatchingIndexingMap(inputOperand);
-            return map == consumerIndexingMap ||
-                   (map.isProjectedPermutation() && !map.isPermutation());
-          })) {
-    return false;
-  }
-
+  producerIndexingMap.dump();
+  consumerIndexingMap.dump();
   // Make the input map match the producer map by applying a permutation map
   // computed with consumerIndexingMap.compose(inv(producerIndexingMap))
-  AffineMap invProducerIndexingMap = inversePermutation(producerIndexingMap);
-  AffineMap permutationMap =
-      consumerIndexingMap.compose(invProducerIndexingMap);
-  auto perm = llvm::map_to_vector(permutationMap.getResults(),
-                                  [](AffineExpr e) -> unsigned {
-                                    return cast<AffineDimExpr>(e).getPosition();
-                                  });
+
+  auto perm = llvm::to_vector(
+      llvm::seq<unsigned int>(0, consumer.getStaticLoopRanges().size()));
+  for (auto [producerRes, consumerRes] :
+       llvm::zip(producerIndexingMap.getResults(),
+                 consumerIndexingMap.getResults())) {
+    int64_t producerPos = cast<AffineDimExpr>(producerRes).getPosition();
+    if (producerPos > perm.size()) {
+      return false;
+    }
+    std::swap(perm[producerPos],
+              perm[cast<AffineDimExpr>(consumerRes).getPosition()]);
+  }
   IRRewriter rewriter(consumer->getContext());
   FailureOr<linalg::GenericOp> interchangedOp =
       linalg::interchangeGenericOp(rewriter, consumer, perm);
@@ -639,16 +620,19 @@ isFusableWithConsumer(OpOperand &fusedOperand,
     return false;
   }
 
+  llvm::dbgs() << "BEFORE CHECK!!!\n";
+
   if (!areOpsFusable(producer, consumer, rootOuterParallelLoops)) {
     // Check if interchange in the consumer makes it fusable.
     // Currently limit it to horizontally fused gemms.
     // TODO(#20019) to remove this restriction.
-    if (!IREE::LinalgExt::isaHorizontallyFusedContraction(producer) ||
-        !makeConsumerFusableViaInterchange(fusedOperand,
+    if (!makeConsumerFusableViaInterchange(fusedOperand,
                                            rootOuterParallelLoops)) {
+      llvm::dbgs() << "FALSE\n";
       return false;
     }
   }
+  llvm::dbgs() << "AFTER CHECK!!!\n";
 
   // Check if the iteration spaces of the producer and consumer are same.
   // TODO(#12664): This is unnecessary requirement, but we need a better config
@@ -721,14 +705,15 @@ fuseRootsWithConsumers(MLIRContext *context, ArrayRef<Operation *> roots,
 
       // For now prune the fusable uses due to codegen failures. Ideally we
       // should just be taking the whole set of fusable uses.
-      if (IREE::LinalgExt::isBitTruncateOp(fusableUses.front()->getOwner())) {
-        fusableUses =
-            llvm::filter_to_vector(fusableUses, [](OpOperand *operand) {
-              return IREE::LinalgExt::isBitTruncateOp(operand->getOwner());
-            });
-      } else {
-        fusableUses.resize(1);
-      }
+      // if (IREE::LinalgExt::isBitTruncateOp(fusableUses.front()->getOwner()))
+      // {
+      //   fusableUses =
+      //       llvm::filter_to_vector(fusableUses, [](OpOperand *operand) {
+      //         return IREE::LinalgExt::isBitTruncateOp(operand->getOwner());
+      //       });
+      // } else {
+      //   fusableUses.resize(1);
+      // }
 
       // Analyse the use to see if it is fusable.
       for (OpOperand *fusableUse : fusableUses) {
@@ -737,6 +722,10 @@ fuseRootsWithConsumers(MLIRContext *context, ArrayRef<Operation *> roots,
             hasFusionGroupsAttribute(consumerOp)) {
           continue;
         }
+
+        root->dumpPretty();
+        fusableUse->getOwner()->dumpPretty();
+        llvm::dbgs() << "NUM SET: " << rootOuterParallelLoops.count() << '\n';
 
         if (isFusableWithConsumer(*fusableUse, rootOuterParallelLoops,
                                   options)) {

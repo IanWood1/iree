@@ -3195,10 +3195,6 @@ static LogicalResult setRootConfig(IREE::GPU::TargetAttr target,
       LDBG() << "Vector Distribution Subgroup Reduction Config";
       return success();
     }
-    if (succeeded(setWarpReductionConfig(target, entryPointFn, linalgOp))) {
-      LDBG() << "Warp Reduction Config";
-      return success();
-    }
     if (succeeded(setConvolutionConfig(target, entryPointFn, linalgOp, 16))) {
       LDBG() << "Convolution Config";
       return success();
