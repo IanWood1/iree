@@ -100,7 +100,9 @@ struct DropUnitDimsFromCollapseOfExpand
     // `expandOp` op.
     const auto expandReassoc = expandOp.getReassociationIndices();
     for (const auto &[inDim, indices] : llvm::enumerate(expandReassoc)) {
-      if (indices.size() == 1) {
+      if (llvm::all_of(indices,
+                       [&](int64_t idx) { return toDrop.contains(idx); })) {
+
         toDrop.erase(indices[0]);
       }
     }
