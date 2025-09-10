@@ -24,14 +24,8 @@ enum class EncodingOptions { Padding, MatmulK, Generic };
 // Pipelines
 //===----------------------------------------------------------------------===//
 
-/// This is a placeholder for future. We should pass all the options through the
-/// struct.
-struct TransformOptions : public PassPipelineOptions<TransformOptions> {
-  DispatchCreationOptions options;
-};
-
-void buildDispatchCreationPassPipeline(
-    OpPassManager &passManager, const TransformOptions &transformOptions);
+void buildDispatchCreationPassPipeline(OpPassManager &passManager,
+                                       const DispatchCreationOptions &options);
 
 //===----------------------------------------------------------------------===//
 // Register all Passes

@@ -291,8 +291,8 @@ addDispatchRegionCreationPasses(OpPassManager &passManager,
 }
 
 // Apply preprocessing and form dispatch regions
-void buildDispatchCreationPassPipeline(
-    OpPassManager &passManager, const TransformOptions &transformOptions) {
+void buildDispatchCreationPassPipeline(OpPassManager &passManager,
+                                       const DispatchCreationOptions &options) {
 
   // Inject tensor tracing early as we need to have the tracers in the IR
   // prior to dispatch region formation where we may lose access to them.
@@ -331,9 +331,8 @@ void buildDispatchCreationPassPipeline(
       .addPass(IREE::Flow::createCanonicalizePass)
       .addPass(mlir::createCSEPass);
 
-  addDispatchRegionCreationPreprocessingPasses(passManager,
-                                               transformOptions.options);
-  addDispatchRegionCreationPasses(passManager, transformOptions.options);
+  addDispatchRegionCreationPreprocessingPasses(passManager, options);
+  addDispatchRegionCreationPasses(passManager, options);
 
   FunctionLikeNest(passManager)
       .addPass(DispatchCreation::createConvertDispatchRegionsToWorkgroupsPass)
@@ -394,10 +393,10 @@ void registerDispatchCreationPipelines() {
         llvm::cl::init(false),
     };
 
-    std::unique_ptr<TransformOptions> toTransformOptions() const {
-      auto options = std::make_unique<TransformOptions>();
-      options->options.enableAggressiveFusion = aggressiveFusion;
-      options->options.dataTiling = dataTiling;
+    DispatchCreationOptions getPhaseOptions() const {
+      DispatchCreationOptions options;
+      options.enableAggressiveFusion = aggressiveFusion;
+      options.dataTiling = dataTiling;
       return options;
     }
   };
@@ -409,19 +408,17 @@ void registerDispatchCreationPipelines() {
           [](OpPassManager &passManager,
              const DispatchCreationPipelineOptions &options) {
             buildDispatchCreationPassPipeline(passManager,
-                                              *(options.toTransformOptions()));
+                                              options.getPhaseOptions());
           });
 
-  PassPipelineRegistration<TransformOptions>
-      dispatchCreationPreprocessingPipeline(
-          "iree-dispatch-creation-preprocessing-pipeline",
-          "Flag used to run preprocessing passes that run passes before "
-          "dispatch region formation. Used only for testing",
-          [](OpPassManager &passManager,
-             const TransformOptions &transformOptions) {
-            addDispatchRegionCreationPreprocessingPasses(
-                passManager, transformOptions.options);
-          });
+  PassPipelineRegistration<> dispatchCreationPreprocessingPipeline(
+      "iree-dispatch-creation-preprocessing-pipeline",
+      "Flag used to run preprocessing passes that run passes before "
+      "dispatch region formation. Used only for testing",
+      [](OpPassManager &passManager) {
+        addDispatchRegionCreationPreprocessingPasses(passManager,
+                                                     DispatchCreationOptions{});
+      });
 }
 
 } // namespace mlir::iree_compiler::DispatchCreation

@@ -276,14 +276,12 @@ void buildIREEVMTransformPassPipeline(
     // No flow/stream processing (implies no tensors).
     break;
   default:
-    DispatchCreation::TransformOptions dispatchTransformOptions;
-    dispatchTransformOptions.options = dispatchCreationOptions;
     if (compileFrom < IREEVMPipelinePhase::DispatchCreation) { // late-entry
       IREE_TRACE_ADD_BEGIN_FRAME_PASS(passManager, "DispatchCreation");
       if (hooks.beforePhase)
         hooks.beforePhase(IREEVMPipelinePhase::DispatchCreation, passManager);
       DispatchCreation::buildDispatchCreationPassPipeline(
-          passManager, dispatchTransformOptions);
+          passManager, dispatchCreationOptions);
       if (hooks.afterPhase)
         hooks.afterPhase(IREEVMPipelinePhase::DispatchCreation, passManager);
       IREE_TRACE_ADD_END_FRAME_PASS(passManager, "DispatchCreation");
