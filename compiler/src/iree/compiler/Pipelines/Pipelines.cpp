@@ -175,7 +175,34 @@ void buildIREEPrecompileTransformPassPipeline(
                                                   halAssignmentOptions);
 
   GlobalOptimization::TransformOptions globalTransformOptions;
-  globalTransformOptions.options = globalOptimizationOptions;
+  globalTransformOptions.constExprMaxSizeIncreaseThreshold =
+      globalOptimizationOptions.constExprMaxSizeIncreaseThreshold;
+  globalTransformOptions.parameterImportPaths =
+      globalOptimizationOptions.parameterImportPaths;
+  globalTransformOptions.parameterImportKeys =
+      globalOptimizationOptions.parameterImportKeys;
+  globalTransformOptions.parameterImportMaximumSize =
+      globalOptimizationOptions.parameterImportMaximumSize;
+  globalTransformOptions.parameterExportPath =
+      globalOptimizationOptions.parameterExportPath;
+  globalTransformOptions.parameterExportMinimumSize =
+      globalOptimizationOptions.parameterExportMinimumSize;
+  globalTransformOptions.parameterSplatExportFile =
+      globalOptimizationOptions.parameterSplatExportFile;
+  globalTransformOptions.aggressiveTransposePropagation =
+      globalOptimizationOptions.aggressiveTransposePropagation;
+  globalTransformOptions.outerDimConcat =
+      globalOptimizationOptions.outerDimConcat;
+  globalTransformOptions.dataTiling = globalOptimizationOptions.dataTiling;
+  globalTransformOptions.constExprHoisting =
+      globalOptimizationOptions.constExprHoisting;
+  globalTransformOptions.constEval = globalOptimizationOptions.constEval;
+  globalTransformOptions.numericPrecisionReduction =
+      globalOptimizationOptions.numericPrecisionReduction;
+  globalTransformOptions.stripAssertions =
+      globalOptimizationOptions.stripAssertions;
+  globalTransformOptions.generalizeMatmul =
+      globalOptimizationOptions.generalizeMatmul;
 
   // Enable const-eval via hook. For debug builds, we assert if enabled
   // without a hook. For release, we just silently skip enabling const-eval.
