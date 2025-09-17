@@ -8,6 +8,8 @@
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Affine/Utils.h"
+#include "mlir/Dialect/MemRef/Transforms/Transforms.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Tensor/Transforms/Transforms.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/Pass/Pass.h"
@@ -84,6 +86,63 @@ struct FoldFullInsertSlice : public OpRewritePattern<tensor::InsertSliceOp> {
   }
 };
 
+class DecomposeTensorReshape : public OpRewritePattern<tensor::ReshapeOp> {
+public:
+  using OpRewritePattern<tensor::ReshapeOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(tensor::ReshapeOp op,
+                                PatternRewriter &rewriter) const override {
+    Location loc = op.getLoc();
+    Value input = op.getSource();
+    RankedTensorType inputType = cast<RankedTensorType>(input.getType());
+    RankedTensorType outputType = cast<RankedTensorType>(op.getResultType());
+
+    // Create a 1D tensor type for the collapsed shape. If the input rank is
+    // fully static, make the collapsed extent static; otherwise dynamic.
+    int64_t totalElements = 1;
+    bool allStatic = true;
+    for (int64_t dim : inputType.getShape()) {
+      if (ShapedType::isDynamic(dim)) {
+        allStatic = false;
+        break;
+      }
+      totalElements *= dim;
+    }
+    SmallVector<int64_t> collapsedShape = {allStatic ? totalElements
+                                                     : ShapedType::kDynamic};
+    RankedTensorType collapsedType =
+        RankedTensorType::get(collapsedShape, inputType.getElementType());
+
+    // Create reassociation indices to collapse all dimensions into one
+    SmallVector<ReassociationIndices> collapseReassociation;
+    ReassociationIndices allDims;
+    for (int i = 0; i < inputType.getRank(); ++i) {
+      allDims.push_back(i);
+    }
+    collapseReassociation.push_back(allDims);
+
+    // Create the collapse_shape operation
+    Value collapsed = tensor::CollapseShapeOp::create(
+        rewriter, loc, collapsedType, input, collapseReassociation);
+
+    // Create reassociation indices to expand back to output shape
+    SmallVector<ReassociationIndices> expandReassociation;
+    ReassociationIndices expandedGroup;
+    for (int i = 0; i < outputType.getRank(); ++i) {
+      expandedGroup.push_back(i);
+    }
+    expandReassociation.push_back(expandedGroup);
+
+    // Create the expand_shape operation
+    Value expanded = tensor::ExpandShapeOp::create(
+        rewriter, loc, outputType, collapsed, expandReassociation);
+
+    // Replace the original reshape operation
+    rewriter.replaceOp(op, expanded);
+    return success();
+  }
+};
+
 /// Convert an "affine.apply" operation into a sequence of arith ops.
 class AffineApplyLowering : public OpRewritePattern<affine::AffineApplyOp> {
 public:
@@ -123,6 +182,7 @@ struct CanonicalizePass : public impl::CanonicalizePassBase<CanonicalizePass> {
     tensor::populateMergeConsecutiveInsertExtractSlicePatterns(owningPatterns);
     owningPatterns.add<FoldFullInsertSlice>(context);
     owningPatterns.add<AffineApplyLowering>(context);
+    owningPatterns.add<DecomposeTensorReshape>(context);
 
     patterns =
         std::make_shared<FrozenRewritePatternSet>(std::move(owningPatterns));
