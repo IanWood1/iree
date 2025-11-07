@@ -34,90 +34,22 @@ void moveUpMemrefReshapeOps(RewriterBase &rewriter, Operation *op) {
 
 namespace {
 
-struct FuseTilableForallConsumers final
-    : OpInterfaceRewritePattern<TilingInterface> {
-  using OpInterfaceRewritePattern::OpInterfaceRewritePattern;
-  LogicalResult matchAndRewrite(TilingInterface tilableOp,
+struct FuseTilableForallConsumers final : OpRewritePattern<scf::ForallOp> {
+  using Base::Base;
+  LogicalResult matchAndRewrite(scf::ForallOp forallOp,
                                 PatternRewriter &rewriter) const override {
-    // Currently consumer fusion requires DPS, and we don't want to fuse through
-    // inits anyway.
-    auto dpsOp = dyn_cast<DestinationStyleOpInterface>(*tilableOp);
-    if (!dpsOp) {
+    SmallVector<Operation *> producerSlices;
+    for (Operation &yieldOp : forallOp.getTerminator().getYieldingOps()) {
+      if (isa<tensor::ParallelInsertSliceOp>(yieldOp)) {
+        producerSlices.push_back(&yieldOp);
+      }
+    }
+    if (producerSlices.empty()) {
       return failure();
     }
-
-    tensor::ParallelInsertSliceOp producerSlice;
-    LoopLikeOpInterface sliceOwner;
-    Value fusionOperand;
-    for (auto operand : dpsOp.getDpsInputs()) {
-      auto forallProducer = operand.getDefiningOp<scf::ForallOp>();
-      if (!forallProducer) {
-        continue;
-      }
-      if (forallProducer->getBlock() != tilableOp->getBlock()) {
-        continue;
-      }
-      Value iterArg = forallProducer.getTiedBlockArgument(
-          forallProducer.getTiedOpOperand(cast<OpResult>(operand)));
-
-      for (auto user : iterArg.getUsers()) {
-        auto sliceOp = dyn_cast<tensor::ParallelInsertSliceOp>(user);
-        if (sliceOp && sliceOp.getDest() == iterArg) {
-          producerSlice = sliceOp;
-          sliceOwner = forallProducer;
-          fusionOperand = operand;
-          break;
-        }
-      }
-      if (producerSlice) {
-        break;
-      }
-    }
-
-    if (!producerSlice) {
-      return rewriter.notifyMatchFailure(tilableOp,
-                                         "no scf.forall producer to fuse into");
-    }
-
-    for (auto operand : tilableOp->getOperands()) {
-      if (operand != fusionOperand && operand.getDefiningOp() == sliceOwner) {
-        return rewriter.notifyMatchFailure(tilableOp,
-                                           "unimplemented: Cannot fuse op with "
-                                           "multiple uses of producer loop");
-      }
-    }
-
-    // The `tileAndFuseConsumerOfSlices` transform will fail if there are any
-    // users of the loop that do not dominate the `tilableOp`, so we move the
-    // `tilableOp` and any producers needed for dominance right after the loop.
-    // TODO(Max191): Refactor `tileAndFuseConsumerOfSlices` upstream to properly
-    // support forall ops with multiple results. The other results of the loop
-    // can block fusion because of the dominance issue. Once this is refactored,
-    // we should remove this workaround.
-    llvm::SetVector<Operation *> slice;
-    BackwardSliceOptions options;
-    DominanceInfo domInfo;
-    options.filter = [&](Operation *op) {
-      return domInfo.properlyDominates(sliceOwner, op);
-    };
-    options.inclusive = true;
-    options.omitUsesFromAbove = false;
-    options.omitBlockArguments = true;
-    if (succeeded(getBackwardSlice(tilableOp, &slice, options))) {
-      for (Operation *op : llvm::reverse(slice)) {
-        // Don't use the rewriter here because it will notify the Listener, and
-        // can add the operations back on the worklist. If the fusion fails
-        // after this, then the ops might get continuously added to the
-        // worklist.
-        Block *block = sliceOwner->getBlock();
-        Block::iterator iterator = std::next(sliceOwner->getIterator());
-        op->moveBefore(block, iterator);
-      }
-    }
-
+    auto loop = cast<LoopLikeOpInterface>(forallOp.getOperation());
     FailureOr<scf::SCFFuseConsumerOfSliceResult> fuseConsumerResults =
-        scf::tileAndFuseConsumerOfSlices(rewriter, producerSlice.getOperation(),
-                                         {sliceOwner});
+        scf::tileAndFuseConsumerOfSlices(rewriter, producerSlices, {loop});
     if (failed(fuseConsumerResults)) {
       return failure();
     }
