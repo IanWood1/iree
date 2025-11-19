@@ -558,6 +558,19 @@ moveFollowingOpIntoDispatchRegion(RewriterBase &rewriter, Operation *target,
     });
   }
 
+  mlir::visitUsedValuesDefinedAbove(
+      clonedTarget->getRegions(), [&](OpOperand *operand) {
+        if (operand->get().getDefiningOp() != regionOp) {
+          return;
+        }
+        auto returnOp = cast<IREE::Flow::ReturnOp>(
+            regionOp.getBody().front().getTerminator());
+        auto opResult = cast<OpResult>(operand->get());
+        Value yieldedValue = returnOp->getOperand(opResult.getResultNumber());
+        rewriter.modifyOpInPlace(operand->getOwner(),
+                                 [&]() { operand->set(yieldedValue); });
+      });
+
   // Gather all uses of `target`.
   for (auto [index, result] : llvm::enumerate(target->getResults())) {
     replacedValues.push_back(result);

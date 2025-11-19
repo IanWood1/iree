@@ -38,6 +38,7 @@
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Verifier.h"
 #include "mlir/Interfaces/DestinationStyleOpInterface.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Interfaces/TilingInterface.h"
@@ -129,6 +130,17 @@ public:
   bool isFusable(Operation *op) const {
     FailureOr<AffineMap> maybeMap = getRootParallelLoopToOpMap(op);
     if (failed(maybeMap)) {
+      return false;
+    }
+
+    bool hasUseFromAbove = false;
+    mlir::visitUsedValuesDefinedAbove(
+        op->getRegions(), [&](OpOperand *operand) {
+          if (loopMaps.contains(operand->get().getDefiningOp())) {
+            hasUseFromAbove = true;
+          }
+        });
+    if (hasUseFromAbove) {
       return false;
     }
 
