@@ -448,6 +448,75 @@ FailureOr<IREE::Flow::DispatchRegionOp>
 movePrecedingOpsIntoDispatchRegion(RewriterBase &rewriter,
                                    ArrayRef<Operation *> targets,
                                    IREE::Flow::DispatchRegionOp regionOp) {
+  llvm::SetVector<Operation *> targetSet;
+  targetSet.insert(targets.begin(), targets.end());
+
+  // First pass: determine which values will need to be replaced (values that
+  // have uses outside the region and the targets being moved). We need to
+  // check for cycles BEFORE modifying the IR.
+  SmallVector<Value> valuesToReplace;
+  for (Operation *target : targets) {
+    for (Value result : target->getResults()) {
+      bool hasUsesOutsideOfRegion =
+          llvm::any_of(result.getUses(), [&](OpOperand &use) {
+            Operation *user = use.getOwner();
+            return !regionOp->isProperAncestor(user) && !targetSet.count(user);
+          });
+      if (hasUsesOutsideOfRegion) {
+        valuesToReplace.push_back(result);
+      }
+    }
+  }
+
+  // Check for cycles BEFORE modifying the IR. Compute forward slice from
+  // values that will be replaced to find dependent operations.
+  Operation *regionOperation = regionOp.getOperation();
+  ForwardSliceOptions options;
+  options.filter = [&](Operation *op) {
+    // Only include operations that are before the dispatch region
+    // and not one of the targets being moved.
+    if (targetSet.count(op)) {
+      return false;
+    }
+    // Check if this op is in a region that is part of an op that
+    // is before the dispatch region.
+    Operation *parentInBlock = op;
+    while (parentInBlock->getBlock() != regionOperation->getBlock()) {
+      parentInBlock = parentInBlock->getParentOp();
+      if (!parentInBlock) {
+        return false;
+      }
+    }
+    return parentInBlock->isBeforeInBlock(regionOperation);
+  };
+  options.inclusive = false;
+
+  llvm::SetVector<Operation *> slice;
+  for (Value val : valuesToReplace) {
+    getForwardSlice(val, &slice, options);
+  }
+
+  // Check if moving these operations would create a cycle with the dispatch
+  // region (i.e., if the dispatch region depends on any of these operations).
+  if (slice.contains(regionOperation)) {
+    return regionOp.emitOpError(
+        "cannot move producer into dispatch: would create cyclic dependency");
+  }
+
+  // Check that none of the slice operations are used by the dispatch region.
+  for (Operation *op : slice) {
+    for (Value result : op->getResults()) {
+      for (OpOperand &use : result.getUses()) {
+        if (regionOperation->isProperAncestor(use.getOwner())) {
+          return regionOp.emitOpError("cannot move producer into dispatch: "
+                                      "intermediate op is used by dispatch");
+        }
+      }
+    }
+  }
+
+  // Now that we've verified no cycles, proceed with the transformation.
+
   // Values replaced by moving the `targets` into the dispatch region.
   SmallVector<Value> replacedValues;
 
@@ -457,9 +526,6 @@ movePrecedingOpsIntoDispatchRegion(RewriterBase &rewriter,
 
   // New values that are yielded from dispatch.
   SmallVector<Value> yieldedResults;
-
-  llvm::SetVector<Operation *> targetSet;
-  targetSet.insert(targets.begin(), targets.end());
 
   Block &body = regionOp.getBody().front();
   for (Operation *target : llvm::reverse(targets)) {
@@ -507,6 +573,18 @@ movePrecedingOpsIntoDispatchRegion(RewriterBase &rewriter,
 
   ValueRange replacements =
       newRegionOp->getResults().take_back(replacedValues.size());
+
+  // Topologically sort the slice and move operations after the dispatch.
+  // We need to track the last moved operation so that dependent operations
+  // are placed after their dependencies.
+  Operation *newRegionOperation = newRegionOp->getOperation();
+  mlir::topologicalSort(slice);
+  Operation *insertAfter = newRegionOperation;
+  for (Operation *op : slice) {
+    rewriter.moveOpAfter(op, insertAfter);
+    insertAfter = op;
+  }
+
   for (auto [index, replacedVal] : llvm::enumerate(replacedValues)) {
     rewriter.replaceAllUsesWith(replacedVal, replacements[index]);
   }

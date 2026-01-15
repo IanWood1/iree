@@ -2006,3 +2006,112 @@ util.func public @fuse_consumer_despite_nonfusable_sibling(%arg0: tensor<10x32x4
 //       CHECK:     flow.return %[[REDUCTION]], %[[SUB]]
 //       CHECK:   %[[EXPAND:.+]] = tensor.expand_shape %[[DISPATCH]]#0
 //       CHECK:   util.return %[[EXPAND]], %[[DISPATCH]]#1
+
+// -----
+
+// Check that elementwise op with collapse_shape and reduction fuse into a
+// single dispatch.
+util.func public @elementwise_collapse_reduction(%arg0: tensor<32x32xf32>) -> (tensor<32xf32>, tensor<1024xf32>) {
+  %cst = arith.constant 1.000000e+00 : f32
+  %0 = tensor.empty() : tensor<32x32xf32>
+  %1 = tensor.empty() : tensor<32xf32>
+  %cst_0 = arith.constant 0.000000e+00 : f32
+  %2 = linalg.fill ins(%cst_0 : f32) outs(%1 : tensor<32xf32>) -> tensor<32xf32>
+  %3 = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0, d1)>], iterator_types = ["parallel", "parallel"]} ins(%arg0 : tensor<32x32xf32>) outs(%0 : tensor<32x32xf32>) {
+  ^bb0(%in: f32, %out: f32):
+    %5 = arith.addf %in, %cst : f32
+    linalg.yield %5 : f32
+  } -> tensor<32x32xf32>
+  %collapsed = tensor.collapse_shape %3 [[0, 1]] : tensor<32x32xf32> into tensor<1024xf32>
+  %4 = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0)>], iterator_types = ["parallel", "reduction"]} ins(%3 : tensor<32x32xf32>) outs(%2 : tensor<32xf32>) {
+  ^bb0(%in: f32, %out: f32):
+    %5 = arith.addf %in, %out : f32
+    linalg.yield %5 : f32
+  } -> tensor<32xf32>
+  util.return %4, %collapsed : tensor<32xf32>, tensor<1024xf32>
+}
+// CHECK-LABEL: util.func public @elementwise_collapse_reduction
+//  CHECK-SAME:   %[[ARG0:[a-zA-Z0-9]+]]: tensor<32x32xf32>
+//       CHECK:   %[[DISPATCH:.+]]:2 = flow.dispatch.region
+//       CHECK:     %[[ELEMENTWISE:.+]] = linalg.generic
+//  CHECK-SAME:         iterator_types = ["parallel", "parallel"]
+//  CHECK-SAME:         ins(%[[ARG0]] :
+//       CHECK:     %[[REDUCTION:.+]] = linalg.generic
+//  CHECK-SAME:         iterator_types = ["parallel", "reduction"]
+//  CHECK-SAME:         ins(%[[ELEMENTWISE]] :
+//       CHECK:     flow.return %[[REDUCTION]], %[[ELEMENTWISE]]
+//       CHECK:   %[[COLLAPSED:.+]] = tensor.collapse_shape %[[DISPATCH]]#1
+//       CHECK:   util.return %[[DISPATCH]]#0, %[[COLLAPSED]]
+
+// -----
+
+// Check expand_shape is moved after dispatch.
+util.func public @expand_shape_moved_after_dispatch(%arg0: tensor<16xf32>) -> (tensor<f32>, tensor<4x4xf32>) {
+  %cst = arith.constant 0.000000e+00 : f32
+  %0 = tensor.empty() : tensor<16xf32>
+  %1 = tensor.empty() : tensor<f32>
+  %2 = linalg.fill ins(%cst : f32) outs(%1 : tensor<f32>) -> tensor<f32>
+  %3 = linalg.generic {indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>], iterator_types = ["parallel"]} ins(%arg0 : tensor<16xf32>) outs(%0 : tensor<16xf32>) {
+  ^bb0(%in: f32, %out: f32):
+    %6 = arith.addf %in, %in : f32
+    linalg.yield %6 : f32
+  } -> tensor<16xf32>
+  %expanded = tensor.expand_shape %3 [[0, 1]] output_shape [4, 4] : tensor<16xf32> into tensor<4x4xf32>
+  %4 = linalg.generic {indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> ()>], iterator_types = ["reduction"]} ins(%3 : tensor<16xf32>) outs(%2 : tensor<f32>) {
+  ^bb0(%in: f32, %out: f32):
+    %6 = arith.addf %in, %out : f32
+    linalg.yield %6 : f32
+  } -> tensor<f32>
+  util.return %4, %expanded : tensor<f32>, tensor<4x4xf32>
+}
+// CHECK-LABEL: util.func public @expand_shape_moved_after_dispatch
+//       CHECK:   %[[DISPATCH:.+]]:2 = flow.dispatch.region
+//       CHECK:     %[[ELEMENTWISE:.+]] = linalg.generic
+//       CHECK:     %[[REDUCTION:.+]] = linalg.generic
+//       CHECK:     flow.return %[[REDUCTION]], %[[ELEMENTWISE]]
+//       CHECK:   %[[EXPANDED:.+]] = tensor.expand_shape %[[DISPATCH]]#1
+//       CHECK:   util.return %[[DISPATCH]]#0, %[[EXPANDED]]
+
+// -----
+
+// Check that we don't fuse when an intermediate op (between producer and
+// dispatch) is used by the dispatch itself. This would create a cycle.
+util.func public @no_fusion_intermediate_used_by_dispatch(%arg0: tensor<4x4xf32>) -> tensor<4xf32> {
+  %cst = arith.constant 0.000000e+00 : f32
+  %0 = tensor.empty() : tensor<4x4xf32>
+  %1 = tensor.empty() : tensor<4xf32>
+  %2 = linalg.fill ins(%cst : f32) outs(%1 : tensor<4xf32>) -> tensor<4xf32>
+  // Producer elementwise op
+  %3 = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0, d1)>], iterator_types = ["parallel", "parallel"]} ins(%arg0 : tensor<4x4xf32>) outs(%0 : tensor<4x4xf32>) {
+  ^bb0(%in: f32, %out: f32):
+    %6 = arith.addf %in, %in : f32
+    linalg.yield %6 : f32
+  } -> tensor<4x4xf32>
+  // This collapse_shape depends on the producer
+  %collapsed = tensor.collapse_shape %3 [[0, 1]] : tensor<4x4xf32> into tensor<16xf32>
+  // Extract from collapse_shape - this creates a value that depends on producer
+  %c0 = arith.constant 0 : index
+  %elem = tensor.extract %collapsed[%c0] : tensor<16xf32>
+  // Reduction uses both the producer AND the extracted element (which depends on collapse_shape)
+  // Fusing producer into this dispatch would require moving collapse_shape after,
+  // but the dispatch uses a value derived from collapse_shape, creating a cycle.
+  %4 = linalg.generic {indexing_maps = [affine_map<(d0, d1) -> (d0, d1)>, affine_map<(d0, d1) -> (d0)>], iterator_types = ["parallel", "reduction"]} ins(%3 : tensor<4x4xf32>) outs(%2 : tensor<4xf32>) {
+  ^bb0(%in: f32, %out: f32):
+    %6 = arith.addf %in, %elem : f32
+    %7 = arith.addf %6, %out : f32
+    linalg.yield %7 : f32
+  } -> tensor<4xf32>
+  util.return %4 : tensor<4xf32>
+}
+// The elementwise and reduction should NOT be fused because fusing them
+// would require moving the collapse_shape after the dispatch, but the
+// reduction uses the extract result which depends on collapse_shape.
+// CHECK-LABEL: util.func public @no_fusion_intermediate_used_by_dispatch
+//       CHECK:   %[[ELEMENTWISE:.+]] = linalg.generic
+//  CHECK-SAME:       iterator_types = ["parallel", "parallel"]
+//       CHECK:   %[[COLLAPSED:.+]] = tensor.collapse_shape %[[ELEMENTWISE]]
+//       CHECK:   tensor.extract %[[COLLAPSED]]
+//       CHECK:   %[[DISPATCH:.+]] = flow.dispatch.region
+//       CHECK:     linalg.generic
+//  CHECK-SAME:       iterator_types = ["parallel", "reduction"]
+//       CHECK:   util.return %[[DISPATCH]]
