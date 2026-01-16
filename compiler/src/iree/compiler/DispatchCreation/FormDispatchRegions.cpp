@@ -689,6 +689,14 @@ isFusableWithConsumer(OpOperand &fusedOperand, const FusionTracker &tracker,
     return false;
   }
 
+  auto rootFusionOp = dyn_cast<IREE::LinalgExt::LinalgFusionOpInterface>(
+      tracker.getFusionGroup(producer).getRoot());
+  if (rootFusionOp && (consumerFusionOp.getNumParallelLoops() -
+                           rootFusionOp.getNumParallelLoops() >
+                       1)) {
+    return false;
+  }
+
   // Check operand limit before allowing fusion
   if (tracker.getFusionGroup(producer).wouldExceedOperandLimit(consumer)) {
     return false;
