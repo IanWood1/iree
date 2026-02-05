@@ -871,7 +871,10 @@ bool isClonableIntoDispatchOp(Operation *op,
   // If the operation is used for masking an AttentionOp, then we always
   // clone it. The Attention mask is usually big, and is always generated
   // from a small tensor, so it's always good to clone it.
-  if (options.aggressive && isAttentionMaskGenerator(op)) {
+  // However, exclude tensor.reshape ops as they have dynamic shape inputs
+  // that cause issues with dispatch region formation.
+  if (options.aggressive && isAttentionMaskGenerator(op) &&
+      !isa<tensor::ReshapeOp>(op)) {
     return true;
   }
 
