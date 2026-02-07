@@ -1517,7 +1517,7 @@ struct ConvertSplatConstantsIntoSplats
   using Base::Base;
   LogicalResult matchAndRewrite(AsyncConstantOp constantOp,
                                 PatternRewriter &rewriter) const override {
-    auto value = dyn_cast<ElementsAttr>(constantOp.getValue());
+    auto value = dyn_cast<DenseElementsAttr>(constantOp.getValue());
     if (!value || !value.isSplat()) {
       return failure();
     }
