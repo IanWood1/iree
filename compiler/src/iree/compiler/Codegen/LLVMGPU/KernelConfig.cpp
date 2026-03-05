@@ -1513,7 +1513,37 @@ static LogicalResult setContractConfig(IREE::GPU::TargetAttr target,
 
       SmallVector<int64_t> reductionTileSizes(
           numParallelLoops + numReductionLoops, 0);
-      reductionTileSizes[numParallelLoops + numReductionLoops - 1] = tileK;
+      // Distribute tileK across reduction dims from innermost outward.
+      // Each tile size must evenly divide the corresponding dim size.
+      {
+        SmallVector<unsigned> reductionDims;
+        op.getReductionDims(reductionDims);
+        SmallVector<int64_t> loopBounds = op.getStaticLoopRanges();
+        int64_t remaining = tileK;
+        for (int i = static_cast<int>(reductionDims.size()) - 1;
+             i >= 0 && remaining > 1; --i) {
+          unsigned dim = reductionDims[i];
+          int64_t dimSize = loopBounds[dim];
+          if (ShapedType::isDynamic(dimSize)) {
+            reductionTileSizes[dim] = remaining;
+            remaining = 1;
+          } else {
+            int64_t tile = std::min(remaining, dimSize);
+            // Ensure tile evenly divides dimSize.
+            while (tile > 1 && dimSize % tile != 0) {
+              --tile;
+            }
+            reductionTileSizes[dim] = tile;
+            remaining = (tile > 0) ? remaining / tile : 1;
+          }
+        }
+        // Any remaining reduction dims get tile size 1.
+        for (unsigned dim : reductionDims) {
+          if (reductionTileSizes[dim] == 0) {
+            reductionTileSizes[dim] = 1;
+          }
+        }
+      }
 
       SmallVector<NamedAttribute, 3> attrs = {
           NamedAttribute("workgroup", b.getI64ArrayAttr(workgroupTileSizes)),
@@ -1542,8 +1572,31 @@ static LogicalResult setContractConfig(IREE::GPU::TargetAttr target,
     }
 
     // Other pipeline (MatmulTensorCore) expect the reduction tile size to be in
-    // the same list.
-    workgroupTileSizes[numParallelLoops + numReductionLoops - 1] = tileK;
+    // the same list. Distribute tileK across reduction dims from innermost
+    // outward. workgroupTileSizes is already initialized to 1, so untouched
+    // reduction dims naturally get tile size 1.
+    {
+      SmallVector<unsigned> reductionDims;
+      op.getReductionDims(reductionDims);
+      SmallVector<int64_t> loopBounds = op.getStaticLoopRanges();
+      int64_t remaining = tileK;
+      for (int i = static_cast<int>(reductionDims.size()) - 1;
+           i >= 0 && remaining > 1; --i) {
+        unsigned dim = reductionDims[i];
+        int64_t dimSize = loopBounds[dim];
+        if (ShapedType::isDynamic(dimSize)) {
+          workgroupTileSizes[dim] = remaining;
+          remaining = 1;
+        } else {
+          int64_t tile = std::min(remaining, dimSize);
+          while (tile > 1 && dimSize % tile != 0) {
+            --tile;
+          }
+          workgroupTileSizes[dim] = tile;
+          remaining = (tile > 0) ? remaining / tile : 1;
+        }
+      }
+    }
     tileSizes.emplace_back(std::move(workgroupTileSizes));
 
     return setOpConfigAndEntryPointFnTranslation(
@@ -1576,13 +1629,18 @@ static LogicalResult setContractConfig(IREE::GPU::TargetAttr target,
   }
   SmallVector<unsigned> exprs;
   op.getReductionDims(exprs);
-  if (exprs.size() == 1) {
-    for (unsigned i = 0, e = lhsShape.size(); i < e; ++i) {
-      if (op.getMatchingIndexingMap(op.getDpsInputOperand(0))
-              .getDimPosition(i) == exprs[0]) {
-        sizeK = lhsShape[i];
+  // Compute sizeK as the product of all reduction dimension sizes.
+  // For multi-dimensional reductions (e.g., dims [16, 32, 16]), the effective
+  // K is the product (8192), allowing the aligned config search to work.
+  {
+    sizeK = 1;
+    for (unsigned reductionDim : exprs) {
+      int64_t dimSize = bounds[reductionDim];
+      if (ShapedType::isDynamic(dimSize)) {
+        sizeK = ShapedType::kDynamic;
         break;
       }
+      sizeK *= dimSize;
     }
   }
   bool isStaticSize = ShapedType::isStatic(sizeM) &&
