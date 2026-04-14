@@ -70,8 +70,9 @@ static IREE::Codegen::InnerTileDescAttrInterface getIntrinsic(Operation *op) {
 /// bounds /= divisor.
 FailureOr<SmallVector<int64_t>> divideTile(SmallVector<int64_t> &bounds,
                                            ArrayRef<int64_t> tile) {
-  assert(bounds.size() >= tile.size() &&
-         "cannot divide bounds with a different rank");
+  if (bounds.size() < tile.size()) {
+    return failure();
+  }
 
   SmallVector<int64_t> divisor(bounds.size(), 1);
   for (auto [div, size] : llvm::zip(divisor, tile)) {
@@ -108,12 +109,53 @@ SmallVector<int64_t> getStridesFromBasis(ArrayRef<int64_t> basis) {
   return strides;
 }
 
-static LogicalResult distributeTilingSizes(Operation *candidate,
-                                           IREE::GPU::LoweringConfigAttr config,
-                                           IREE::GPU::TilingLevel level,
-                                           SmallVector<int64_t> &bounds,
-                                           SmallVector<int64_t> &sizes,
-                                           SmallVector<int64_t> &strides) {
+static LogicalResult normalizeProjectedTilingToBounds(
+    Operation *candidate, IREE::GPU::TilingLevel level, size_t boundsRank,
+    SmallVector<int64_t> &sizes, SmallVector<int64_t> &strides,
+    SmallVector<int64_t> *companionTile = nullptr) {
+  if (sizes.size() != strides.size()) {
+    candidate->emitError() << "inconsistent projected tiling vectors for level "
+                           << IREE::GPU::stringifyTilingLevel(level);
+    return failure();
+  }
+  if (sizes.size() <= boundsRank) {
+    return success();
+  }
+
+  while (sizes.size() > boundsRank) {
+    std::optional<size_t> dropIndex;
+    int64_t bestStride = 0;
+    for (auto [index, size] : llvm::enumerate(sizes)) {
+      if (size != 1) {
+        continue;
+      }
+      int64_t stride = strides[index];
+      if (!dropIndex || stride > bestStride) {
+        dropIndex = index;
+        bestStride = stride;
+      }
+    }
+    if (!dropIndex) {
+      candidate->emitError()
+          << "projected tiling rank exceeds iteration rank for level "
+          << IREE::GPU::stringifyTilingLevel(level);
+      return failure();
+    }
+    sizes.erase(sizes.begin() + *dropIndex);
+    strides.erase(strides.begin() + *dropIndex);
+    if (companionTile && companionTile->size() == sizes.size() + 1) {
+      companionTile->erase(companionTile->begin() + *dropIndex);
+    }
+  }
+
+  return success();
+}
+
+static LogicalResult distributeTilingSizes(
+    Operation *candidate, IREE::GPU::LoweringConfigAttr config,
+    IREE::GPU::TilingLevel level, SmallVector<int64_t> &bounds,
+    SmallVector<int64_t> &sizes, SmallVector<int64_t> &strides,
+    SmallVector<int64_t> *companionTile = nullptr) {
   if (ShapedType::isDynamicShape(bounds)) {
     candidate->emitError()
         << "Cannot set layouts on a dynamically shaped iteration space";
@@ -130,6 +172,10 @@ static LogicalResult distributeTilingSizes(Operation *candidate,
   sizes = applyProjectedPermutation(basis->counts, basis->mapping);
   strides = applyProjectedPermutation(getStridesFromBasis(basis->counts),
                                       basis->mapping);
+  if (failed(normalizeProjectedTilingToBounds(candidate, level, bounds.size(),
+                                              sizes, strides, companionTile))) {
+    return failure();
+  }
 
   if (failed(divideTile(bounds, sizes))) {
     candidate->emitError()
@@ -474,20 +520,21 @@ static LogicalResult setGPULoweringConfigLayout(
   }
 
   // Thread distribution layouts.
+  SmallVector<int64_t> threadTileSizes = config.getStaticTilingLevelSizes(
+      llvm::to_underlying(IREE::GPU::TilingLevel::Thread), candidate);
   SmallVector<int64_t> threadSizes, threadStrides;
-  if (failed(distributeTilingSizes(candidate, config,
-                                   IREE::GPU::TilingLevel::Thread, bounds,
-                                   threadSizes, threadStrides))) {
+  if (failed(distributeTilingSizes(
+          candidate, config, IREE::GPU::TilingLevel::Thread, bounds,
+          threadSizes, threadStrides, &threadTileSizes))) {
     return failure();
   }
 
   // Use thread tile sizes as the vector width for each thread.
-  SmallVector<int64_t> threadTileSizes = config.getStaticTilingLevelSizes(
-      llvm::to_underlying(IREE::GPU::TilingLevel::Thread), candidate);
   FailureOr<SmallVector<int64_t>> elementTile =
       divideTile(bounds, threadTileSizes);
   if (failed(elementTile)) {
     candidate->emitError() << "Could not divide bounds over given thread tile";
+    return failure();
   }
   // The remaining bounds become batch sizes. We could also use subgroup tile
   // sizes, as a way of specifying batch size, but since it is a derived

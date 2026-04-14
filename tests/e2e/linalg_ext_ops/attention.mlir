@@ -233,3 +233,83 @@ func.func @attention3x3x4() {
   ) : tensor<3x3x4xf32>
   return
 }
+
+func.func @broadcast_attention_all_inputs_2x2x4x4() {
+  // batch=2, heads=2, m=4, k2=4, k1=4, n=4
+  %init = tensor.empty() : tensor<2x2x4x4xf32>
+  %query = util.unfoldable_constant dense<0.0> : tensor<4x4xf32>
+  %key = util.unfoldable_constant dense<0.0> : tensor<4x4xf32>
+  %value = util.unfoldable_constant dense<[[1.0, 1.0, 1.0, 1.0],
+                                           [3.0, 3.0, 3.0, 3.0],
+                                           [5.0, 5.0, 5.0, 5.0],
+                                           [7.0, 7.0, 7.0, 7.0]]> : tensor<4x4xf32>
+  %scale = arith.constant 1.0 : f32
+  %result = iree_linalg_ext.attention {
+    indexing_maps = [
+      affine_map<(d0, d1, d2, d3, d4, d5) -> (d2, d4)>,
+      affine_map<(d0, d1, d2, d3, d4, d5) -> (d3, d4)>,
+      affine_map<(d0, d1, d2, d3, d4, d5) -> (d3, d5)>,
+      affine_map<(d0, d1, d2, d3, d4, d5) -> ()>,
+      affine_map<(d0, d1, d2, d3, d4, d5) -> (d0, d1, d2, d5)>
+    ]
+  } ins(%query, %key, %value, %scale : tensor<4x4xf32>, tensor<4x4xf32>, tensor<4x4xf32>, f32)
+    outs(%init : tensor<2x2x4x4xf32>) {
+  ^bb0(%arg0: f32):
+    iree_linalg_ext.yield %arg0 : f32
+  } -> tensor<2x2x4x4xf32>
+  check.expect_almost_eq_const(
+      %result,
+      dense<4.0> : tensor<2x2x4x4xf32>
+  ) : tensor<2x2x4x4xf32>
+  return
+}
+
+func.func @broadcast_attention_kv_batch_2x2x4x4() {
+  // batch=2, heads=2, m=4, k2=4, k1=4, n=4
+  %init = tensor.empty() : tensor<2x2x4x4xf32>
+  %query = util.unfoldable_constant dense<0.0> : tensor<2x2x4x4xf32>
+  %key = util.unfoldable_constant dense<0.0> : tensor<2x4x4xf32>
+  %value = util.unfoldable_constant dense<[[[1.0, 1.0, 1.0, 1.0],
+                                            [3.0, 3.0, 3.0, 3.0],
+                                            [5.0, 5.0, 5.0, 5.0],
+                                            [7.0, 7.0, 7.0, 7.0]],
+                                           [[10.0, 10.0, 10.0, 10.0],
+                                            [20.0, 20.0, 20.0, 20.0],
+                                            [30.0, 30.0, 30.0, 30.0],
+                                            [40.0, 40.0, 40.0, 40.0]]]>
+    : tensor<2x4x4xf32>
+  %scale = arith.constant 1.0 : f32
+  %result = iree_linalg_ext.attention {
+    indexing_maps = [
+      affine_map<(d0, d1, d2, d3, d4, d5) -> (d0, d1, d2, d4)>,
+      affine_map<(d0, d1, d2, d3, d4, d5) -> (d1, d3, d4)>,
+      affine_map<(d0, d1, d2, d3, d4, d5) -> (d1, d3, d5)>,
+      affine_map<(d0, d1, d2, d3, d4, d5) -> ()>,
+      affine_map<(d0, d1, d2, d3, d4, d5) -> (d0, d1, d2, d5)>
+    ]
+  } ins(%query, %key, %value, %scale : tensor<2x2x4x4xf32>, tensor<2x4x4xf32>, tensor<2x4x4xf32>, f32)
+    outs(%init : tensor<2x2x4x4xf32>) {
+  ^bb0(%arg0: f32):
+    iree_linalg_ext.yield %arg0 : f32
+  } -> tensor<2x2x4x4xf32>
+  check.expect_almost_eq_const(
+      %result,
+      dense<[[[[4.0, 4.0, 4.0, 4.0],
+               [4.0, 4.0, 4.0, 4.0],
+               [4.0, 4.0, 4.0, 4.0],
+               [4.0, 4.0, 4.0, 4.0]],
+              [[25.0, 25.0, 25.0, 25.0],
+               [25.0, 25.0, 25.0, 25.0],
+               [25.0, 25.0, 25.0, 25.0],
+               [25.0, 25.0, 25.0, 25.0]]],
+             [[[4.0, 4.0, 4.0, 4.0],
+               [4.0, 4.0, 4.0, 4.0],
+               [4.0, 4.0, 4.0, 4.0],
+               [4.0, 4.0, 4.0, 4.0]],
+              [[25.0, 25.0, 25.0, 25.0],
+               [25.0, 25.0, 25.0, 25.0],
+               [25.0, 25.0, 25.0, 25.0],
+               [25.0, 25.0, 25.0, 25.0]]]]> : tensor<2x2x4x4xf32>
+  ) : tensor<2x2x4x4xf32>
+  return
+}

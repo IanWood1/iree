@@ -51,6 +51,58 @@ func.func @matmul_96x64x16_mfma(%lhs: tensor<96x16xf16>,
 // -----
 
 #translation = #iree_codegen.translation_info<pipeline = #iree_gpu.pipeline<VectorDistribute>
+                                              workgroup_size = [256, 1, 1]
+                                              subgroup_size = 64>
+
+#maps_rank_reduced = [
+  affine_map<(m, k, n) -> (m, k)>,
+  affine_map<(m, k, n) -> (n, k)>,
+  affine_map<(m, k, n) -> (m, n)>
+]
+
+#traits_rank_reduced = {
+  indexing_maps = #maps_rank_reduced,
+  iterator_types = ["parallel", "reduction", "parallel"],
+  lowering_config = #iree_gpu.lowering_config<{
+    mma_kind = #iree_gpu.mma_layout<MFMA_F32_16x16x16_BF16, col_major = true>,
+    promote_operands = [0, 1],
+    subgroup_basis = [[1, 1, 4, 1, 1, 1], [0, 1, 2, 4, 5]]
+  }>
+}
+
+func.func @matmul_rank_reduced_projected_subgroup_basis(%lhs: tensor<64x128xbf16>,
+                                                        %rhs: tensor<16x128xbf16>,
+                                                        %init: tensor<64x16xf32>)
+                                                        -> tensor<64x16xf32>
+                                                        attributes { translation_info = #translation } {
+  %out = linalg.generic #traits_rank_reduced
+                        ins(%lhs, %rhs: tensor<64x128xbf16>, tensor<16x128xbf16>)
+                        outs(%init: tensor<64x16xf32>) {
+    ^bb0(%in: bf16, %in_1: bf16, %out: f32):
+      %ex = arith.extf %in : bf16 to f32
+      %ex_1 = arith.extf %in_1 : bf16 to f32
+      %mul = arith.mulf %ex, %ex_1 : f32
+      %sum = arith.addf %out, %mul : f32
+      linalg.yield %sum : f32
+  } -> tensor<64x16xf32>
+  return %out : tensor<64x16xf32>
+}
+
+// CHECK-DAG: #[[$NESTED:.+]] = #iree_vector_ext.nested_layout<subgroup_tile = [4, 1], batch_tile = [1, 8], outer_tile = [1, 1], thread_tile = [16, 4], element_tile = [1, 4], subgroup_strides = [1, 0], thread_strides = [1, 16]>
+// CHECK-DAG: #[[$NESTED1:.+]] = #iree_vector_ext.nested_layout<subgroup_tile = [1, 1], batch_tile = [1, 8], outer_tile = [1, 1], thread_tile = [16, 4], element_tile = [1, 4], subgroup_strides = [0, 0], thread_strides = [1, 16]>
+// CHECK-DAG: #[[$NESTED2:.+]] = #iree_vector_ext.nested_layout<subgroup_tile = [4, 1], batch_tile = [1, 1], outer_tile = [1, 1], thread_tile = [16, 4], element_tile = [1, 4], subgroup_strides = [1, 0], thread_strides = [1, 16]>
+
+// CHECK-LABEL: func.func @matmul_rank_reduced_projected_subgroup_basis
+// CHECK-DAG: %[[LHS:.+]] = iree_vector_ext.to_layout %{{.*}} to layout(#[[$NESTED]]) {shared_memory_conversion}
+// CHECK-DAG: %[[RHS:.+]] = iree_vector_ext.to_layout %{{.*}} to layout(#[[$NESTED1]]) {shared_memory_conversion}
+// CHECK-DAG: %[[ACC:.+]] = iree_vector_ext.to_layout %{{.*}} to layout(#[[$NESTED2]])
+// CHECK: linalg.generic
+// CHECK-SAME: ins(%[[LHS]], %[[RHS]]
+// CHECK-SAME: outs(%[[ACC]]
+
+// -----
+
+#translation = #iree_codegen.translation_info<pipeline = #iree_gpu.pipeline<VectorDistribute>
                                               workgroup_size = [64, 1, 1]
                                               subgroup_size = 64>
 
